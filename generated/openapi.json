@@ -1,0 +1,1360 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "operationId": "AuthController_register",
+        "summary": "Регистрация нового пользователя",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Пользователь успешно зарегистрирован",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponseDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Пользователь с таким email уже существует"
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "AuthController_login",
+        "summary": "Вход в систему",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный вход",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Неверные учетные данные"
+          }
+        },
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "operationId": "AuthController_getProfile",
+        "summary": "Получить информацию о текущем пользователе",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Информация о пользователе",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          }
+        },
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/users": {
+      "get": {
+        "operationId": "UsersController_findAll",
+        "summary": "Получить список всех пользователей",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Список пользователей",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/UserResponseDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          }
+        },
+        "tags": [
+          "users"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/meetings": {
+      "post": {
+        "operationId": "MeetingsController_create",
+        "summary": "Создать новую встречу",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMeetingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Встреча успешно создана",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "get": {
+        "operationId": "MeetingsController_findAll",
+        "summary": "Получить все встречи текущего пользователя",
+        "parameters": [
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "description": "Фильтр по статусу встречи",
+            "schema": {
+              "enum": [
+                "current",
+                "past"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список встреч",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MeetingResponseDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/meetings/{id}": {
+      "get": {
+        "operationId": "MeetingsController_findOne",
+        "summary": "Получить встречу по ID",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Детали встречи",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Нет доступа к встрече"
+          },
+          "404": {
+            "description": "Встреча не найдена"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "MeetingsController_update",
+        "summary": "Обновить встречу (только создатель)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMeetingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Встреча обновлена",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Только создатель может обновить встречу"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "MeetingsController_remove",
+        "summary": "Удалить встречу (только создатель)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Встреча удалена"
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Только создатель может удалить встречу"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/meetings/{id}/phase": {
+      "patch": {
+        "operationId": "MeetingsController_changePhase",
+        "summary": "Изменить фазу встречи (только создатель)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePhaseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Фаза встречи изменена",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Только создатель может менять фазу"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/meetings/{id}/evaluations": {
+      "post": {
+        "operationId": "MeetingsController_submitEvaluation",
+        "summary": "Отправить оценку (фаза evaluation)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitEvaluationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Оценка отправлена",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Встреча не в фазе evaluation"
+          },
+          "401": {
+            "description": "Не авторизован"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/meetings/{id}/summaries": {
+      "post": {
+        "operationId": "MeetingsController_submitSummary",
+        "summary": "Отправить резюме (фаза summary)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitSummaryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Резюме отправлено",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Встреча не в фазе summary"
+          },
+          "401": {
+            "description": "Не авторизован"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/meetings/{id}/statistics": {
+      "get": {
+        "operationId": "MeetingsController_getStatistics",
+        "summary": "Получить статистику встречи (только завершенные)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Статистика встречи",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatisticsResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Статистика доступна только для завершенных встреч"
+          },
+          "401": {
+            "description": "Не авторизован"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/tasks": {
+      "post": {
+        "operationId": "TasksController_create",
+        "summary": "Создать новую задачу",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Задача успешно создана",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Неверные данные"
+          },
+          "401": {
+            "description": "Не авторизован"
+          }
+        },
+        "tags": [
+          "tasks"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "get": {
+        "operationId": "TasksController_findAll",
+        "summary": "Получить все задачи текущего пользователя",
+        "parameters": [
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "description": "Фильтр по статусу задачи",
+            "schema": {
+              "enum": [
+                "current",
+                "past"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список задач",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskResponseDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          }
+        },
+        "tags": [
+          "tasks"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/tasks/meeting/{meetingId}": {
+      "get": {
+        "operationId": "TasksController_findByMeeting",
+        "summary": "Получить все задачи из конкретной встречи",
+        "parameters": [
+          {
+            "name": "meetingId",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список задач встречи",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TaskResponseDto"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Неверный ID встречи"
+          },
+          "401": {
+            "description": "Не авторизован"
+          }
+        },
+        "tags": [
+          "tasks"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/tasks/{id}": {
+      "get": {
+        "operationId": "TasksController_findOne",
+        "summary": "Получить задачу по ID",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID задачи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Детали задачи",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Можно просматривать только свои задачи"
+          },
+          "404": {
+            "description": "Задача не найдена"
+          }
+        },
+        "tags": [
+          "tasks"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "TasksController_update",
+        "summary": "Обновить задачу (только автор)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID задачи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Задача обновлена",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Только автор может обновить задачу"
+          }
+        },
+        "tags": [
+          "tasks"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "TasksController_remove",
+        "summary": "Удалить задачу (только автор)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID задачи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Задача удалена"
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Только автор может удалить задачу"
+          }
+        },
+        "tags": [
+          "tasks"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Meetings Quality API",
+    "description": "API для платформы отслеживания качества встреч",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [
+    {
+      "name": "auth",
+      "description": "Аутентификация и авторизация"
+    },
+    {
+      "name": "users",
+      "description": "Управление пользователями"
+    },
+    {
+      "name": "meetings",
+      "description": "Управление встречами"
+    },
+    {
+      "name": "tasks",
+      "description": "Управление задачами"
+    }
+  ],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "JWT-auth": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http",
+        "name": "JWT",
+        "description": "Enter JWT token",
+        "in": "header"
+      }
+    },
+    "schemas": {
+      "CreateUserDto": {
+        "type": "object",
+        "properties": {
+          "fullName": {
+            "type": "string",
+            "description": "Полное имя пользователя",
+            "example": "Иван Иванов"
+          },
+          "email": {
+            "type": "string",
+            "description": "Email пользователя",
+            "example": "ivan@example.com"
+          },
+          "password": {
+            "type": "string",
+            "description": "Пароль (минимум 6 символов)",
+            "example": "password123",
+            "minLength": 6
+          }
+        },
+        "required": [
+          "fullName",
+          "email",
+          "password"
+        ]
+      },
+      "UserResponseDto": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439011"
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Иван Иванов"
+          },
+          "email": {
+            "type": "string",
+            "example": "ivan@example.com"
+          }
+        },
+        "required": [
+          "_id",
+          "fullName",
+          "email"
+        ]
+      },
+      "AuthResponseDto": {
+        "type": "object",
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserResponseDto"
+          }
+        },
+        "required": [
+          "access_token",
+          "user"
+        ]
+      },
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email пользователя",
+            "example": "ivan@example.com"
+          },
+          "password": {
+            "type": "string",
+            "description": "Пароль пользователя",
+            "example": "password123"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "CreateMeetingDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Название встречи",
+            "example": "Обсуждение нового проекта"
+          },
+          "question": {
+            "type": "string",
+            "description": "Вопрос для обсуждения",
+            "example": "Какие технологии использовать для нового проекта?"
+          },
+          "participantIds": {
+            "description": "ID участников встречи",
+            "example": [
+              "507f1f77bcf86cd799439011",
+              "507f1f77bcf86cd799439012"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "title",
+          "question"
+        ]
+      },
+      "MeetingResponseDto": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439020"
+          },
+          "title": {
+            "type": "string",
+            "example": "Обсуждение нового проекта"
+          },
+          "question": {
+            "type": "string",
+            "example": "Какие технологии использовать?"
+          },
+          "creatorId": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439011"
+          },
+          "participantIds": {
+            "example": [
+              "507f1f77bcf86cd799439011",
+              "507f1f77bcf86cd799439012"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "currentPhase": {
+            "type": "string",
+            "enum": [
+              "discussion",
+              "evaluation",
+              "summary",
+              "finished"
+            ],
+            "example": "discussion"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "upcoming",
+              "active",
+              "finished"
+            ],
+            "example": "upcoming"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-01-19T10:00:00.000Z"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-01-19T10:00:00.000Z"
+          }
+        },
+        "required": [
+          "_id",
+          "title",
+          "question",
+          "creatorId",
+          "participantIds",
+          "currentPhase",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "UpdateMeetingDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Название встречи",
+            "example": "Обновленное название встречи"
+          },
+          "question": {
+            "type": "string",
+            "description": "Вопрос для обсуждения",
+            "example": "Обновленный вопрос"
+          },
+          "participantIds": {
+            "description": "ID участников встречи",
+            "example": [
+              "507f1f77bcf86cd799439011"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ChangePhaseDto": {
+        "type": "object",
+        "properties": {
+          "phase": {
+            "type": "string",
+            "description": "Новая фаза встречи",
+            "enum": [
+              "discussion",
+              "evaluation",
+              "summary",
+              "finished"
+            ],
+            "example": "evaluation"
+          }
+        },
+        "required": [
+          "phase"
+        ]
+      },
+      "UnderstandingInfluenceDto": {
+        "type": "object",
+        "properties": {
+          "participantId": {
+            "type": "string",
+            "description": "ID участника",
+            "example": "507f1f77bcf86cd799439012"
+          },
+          "influencePercentage": {
+            "type": "number",
+            "description": "Процент влияния участника на понимание (0-100)",
+            "example": 60,
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "participantId",
+          "influencePercentage"
+        ]
+      },
+      "EmotionalEvaluationDto": {
+        "type": "object",
+        "properties": {
+          "targetParticipantId": {
+            "type": "string",
+            "description": "ID участника, которого оценивают",
+            "example": "507f1f77bcf86cd799439012"
+          },
+          "emotionalScale": {
+            "type": "number",
+            "description": "Эмоциональная оценка от -100 (негативная) до 100 (позитивная)",
+            "example": 80,
+            "minimum": -100,
+            "maximum": 100
+          },
+          "isToxic": {
+            "type": "boolean",
+            "description": "Флаг токсичности участника",
+            "example": false
+          }
+        },
+        "required": [
+          "targetParticipantId",
+          "emotionalScale",
+          "isToxic"
+        ]
+      },
+      "SubmitEvaluationDto": {
+        "type": "object",
+        "properties": {
+          "understandingScore": {
+            "type": "number",
+            "description": "Самооценка понимания задачи (0-100)",
+            "example": 85,
+            "minimum": 0,
+            "maximum": 100
+          },
+          "influences": {
+            "description": "Влияние других участников на понимание",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnderstandingInfluenceDto"
+            }
+          },
+          "emotionalEvaluations": {
+            "description": "Эмоциональные оценки других участников",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmotionalEvaluationDto"
+            }
+          }
+        },
+        "required": [
+          "understandingScore",
+          "influences",
+          "emotionalEvaluations"
+        ]
+      },
+      "SubmitSummaryDto": {
+        "type": "object",
+        "properties": {
+          "taskDescription": {
+            "type": "string",
+            "description": "Описание задачи",
+            "example": "Реализовать аутентификацию пользователей"
+          },
+          "deadline": {
+            "type": "string",
+            "description": "Дедлайн задачи (ISO формат)",
+            "example": "2026-02-01T00:00:00.000Z"
+          },
+          "contributionImportance": {
+            "type": "number",
+            "description": "Важность личного вклада в понимание (0-100)",
+            "example": 90,
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "taskDescription",
+          "deadline",
+          "contributionImportance"
+        ]
+      },
+      "StatisticsResponseDto": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "example": "Какие технологии использовать?"
+          },
+          "avgUnderstanding": {
+            "type": "number",
+            "example": 82.5
+          },
+          "participantStats": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "participant": {
+                  "type": "object",
+                  "properties": {
+                    "_id": {
+                      "type": "string"
+                    },
+                    "fullName": {
+                      "type": "string"
+                    },
+                    "email": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "understandingScore": {
+                  "type": "number"
+                },
+                "averageEmotionalScale": {
+                  "type": "number"
+                },
+                "toxicityFlags": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "question",
+          "avgUnderstanding",
+          "participantStats"
+        ]
+      },
+      "CreateTaskDto": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Описание задачи",
+            "example": "Реализовать аутентификацию пользователей"
+          },
+          "meetingId": {
+            "type": "string",
+            "description": "ID встречи, из которой создана задача",
+            "example": "507f1f77bcf86cd799439020"
+          },
+          "deadline": {
+            "type": "string",
+            "description": "Дедлайн задачи (ISO формат)",
+            "example": "2026-02-01T00:00:00.000Z"
+          },
+          "contributionImportance": {
+            "type": "number",
+            "description": "Важность вклада (0-100)",
+            "example": 90,
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "description",
+          "meetingId",
+          "deadline",
+          "contributionImportance"
+        ]
+      },
+      "TaskResponseDto": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439030"
+          },
+          "description": {
+            "type": "string",
+            "example": "Реализовать аутентификацию пользователей"
+          },
+          "authorId": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439011"
+          },
+          "meetingId": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439020"
+          },
+          "deadline": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-02-01T00:00:00.000Z"
+          },
+          "contributionImportance": {
+            "type": "number",
+            "example": 90,
+            "minimum": 0,
+            "maximum": 100
+          },
+          "isCompleted": {
+            "type": "boolean",
+            "example": false
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-01-19T10:00:00.000Z"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-01-19T10:00:00.000Z"
+          }
+        },
+        "required": [
+          "_id",
+          "description",
+          "authorId",
+          "meetingId",
+          "deadline",
+          "contributionImportance",
+          "isCompleted",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "UpdateTaskDto": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Описание задачи",
+            "example": "Обновленное описание задачи"
+          },
+          "deadline": {
+            "type": "string",
+            "description": "Дедлайн задачи (ISO формат)",
+            "example": "2026-02-15T00:00:00.000Z"
+          },
+          "contributionImportance": {
+            "type": "number",
+            "description": "Важность вклада (0-100)",
+            "example": 95,
+            "minimum": 0,
+            "maximum": 100
+          },
+          "isCompleted": {
+            "type": "boolean",
+            "description": "Статус завершения задачи",
+            "example": true
+          }
+        }
+      }
+    }
+  }
+}

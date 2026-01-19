@@ -2,9 +2,16 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  
+  // Serve generated OpenAPI file statically
+  app.useStaticAssets(join(__dirname, '..', 'generated'), {
+    prefix: '/generated',
+  });
   
   // Enable CORS
   app.enableCors({
@@ -52,6 +59,8 @@ async function bootstrap() {
   
   console.log(`🚀 Application is running on port: ${port}`);
   console.log(`📚 Swagger documentation available at: /api`);
+  console.log(`📄 OpenAPI JSON available at: /api-json`);
+  console.log(`📦 Generated OpenAPI file: /generated/openapi.json`);
   console.log(`✅ Server successfully started!`);
 }
 
