@@ -63,7 +63,7 @@ export class MeetingsService {
       .exec();
   }
 
-  async findOne(id: string, userId: string): Promise<Meeting> {
+  async findOne(id: string, userId: string): Promise<MeetingDocument> {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Invalid meeting ID');
     }
@@ -95,16 +95,17 @@ export class MeetingsService {
     return meeting;
   }
 
-  async update(id: string, updateMeetingDto: UpdateMeetingDto, userId: string): Promise<Meeting> {
+  async update(id: string, updateMeetingDto: UpdateMeetingDto, userId: string): Promise<MeetingDocument> {
     const meeting = await this.findOne(id, userId);
 
     // Only creator can update meeting
-    if (!meeting.creatorId['_id'].equals(new Types.ObjectId(userId))) {
+    const creatorId = (meeting.creatorId as any)?._id || meeting.creatorId;
+    if (!creatorId.equals(new Types.ObjectId(userId))) {
       throw new ForbiddenException('Only the meeting creator can update the meeting');
     }
 
     if (updateMeetingDto.participantIds) {
-      updateMeetingDto['participantIds'] = updateMeetingDto.participantIds.map(
+      (updateMeetingDto as any).participantIds = updateMeetingDto.participantIds.map(
         id => new Types.ObjectId(id)
       );
     }
@@ -117,18 +118,20 @@ export class MeetingsService {
     const meeting = await this.findOne(id, userId);
 
     // Only creator can delete meeting
-    if (!meeting.creatorId['_id'].equals(new Types.ObjectId(userId))) {
+    const creatorId = (meeting.creatorId as any)?._id || meeting.creatorId;
+    if (!creatorId.equals(new Types.ObjectId(userId))) {
       throw new ForbiddenException('Only the meeting creator can delete the meeting');
     }
 
     await this.meetingModel.findByIdAndDelete(id);
   }
 
-  async changePhase(id: string, changePhaseDto: ChangePhaseDto, userId: string): Promise<Meeting> {
+  async changePhase(id: string, changePhaseDto: ChangePhaseDto, userId: string): Promise<MeetingDocument> {
     const meeting = await this.findOne(id, userId);
 
     // Only creator can change phase
-    if (!meeting.creatorId['_id'].equals(new Types.ObjectId(userId))) {
+    const creatorId = (meeting.creatorId as any)?._id || meeting.creatorId;
+    if (!creatorId.equals(new Types.ObjectId(userId))) {
       throw new ForbiddenException('Only the meeting creator can change the phase');
     }
 
@@ -155,7 +158,7 @@ export class MeetingsService {
     id: string, 
     evaluationDto: SubmitEvaluationDto, 
     userId: string
-  ): Promise<Meeting> {
+  ): Promise<MeetingDocument> {
     const meeting = await this.findOne(id, userId);
 
     // Check if meeting is in evaluation phase
@@ -166,12 +169,15 @@ export class MeetingsService {
     const userObjectId = new Types.ObjectId(userId);
 
     // Remove existing evaluation from this user if any
-    meeting.evaluations = meeting.evaluations.filter(
-      (e: any) => !e.participantId.equals(userObjectId)
+    meeting.evaluations = (meeting.evaluations as any[]).filter(
+      (e: any) => {
+        const participantId = e.participantId?._id || e.participantId;
+        return !participantId.equals(userObjectId);
+      }
     );
 
     // Add new evaluation
-    meeting.evaluations.push({
+    (meeting.evaluations as any[]).push({
       participantId: userObjectId,
       understandingScore: evaluationDto.understandingScore,
       influences: evaluationDto.influences.map(inf => ({
@@ -184,7 +190,7 @@ export class MeetingsService {
         isToxic: emo.isToxic,
       })),
       submittedAt: new Date(),
-    } as any);
+    });
 
     return meeting.save();
   }
@@ -193,7 +199,7 @@ export class MeetingsService {
     id: string, 
     summaryDto: SubmitSummaryDto, 
     userId: string
-  ): Promise<Meeting> {
+  ): Promise<MeetingDocument> {
     const meeting = await this.findOne(id, userId);
 
     // Check if meeting is in summary phase
@@ -204,18 +210,21 @@ export class MeetingsService {
     const userObjectId = new Types.ObjectId(userId);
 
     // Remove existing summary from this user if any
-    meeting.summaries = meeting.summaries.filter(
-      (s: any) => !s.participantId.equals(userObjectId)
+    meeting.summaries = (meeting.summaries as any[]).filter(
+      (s: any) => {
+        const participantId = s.participantId?._id || s.participantId;
+        return !participantId.equals(userObjectId);
+      }
     );
 
     // Add new summary
-    meeting.summaries.push({
+    (meeting.summaries as any[]).push({
       participantId: userObjectId,
       taskDescription: summaryDto.taskDescription,
       deadline: new Date(summaryDto.deadline),
       contributionImportance: summaryDto.contributionImportance,
       submittedAt: new Date(),
-    } as any);
+    });
 
     return meeting.save();
   }
@@ -228,19 +237,23 @@ export class MeetingsService {
     }
 
     // Calculate statistics
-    const participants = meeting.participantIds;
+    const participants = meeting.participantIds as any[];
     const participantStats = participants.map((participant: any) => {
-      const participantId = participant._id;
+      const participantId = participant._id || participant;
       
       // Find participant's evaluation
-      const evaluation = meeting.evaluations.find((e: any) => 
-        e.participantId._id.equals(participantId)
-      );
+      const evaluation = (meeting.evaluations as any[]).find((e: any) => {
+        const evalParticipantId = e.participantId?._id || e.participantId;
+        return evalParticipantId.equals(participantId);
+      });
 
       // Get emotional evaluations received by this participant
-      const emotionalScores = meeting.evaluations.flatMap((e: any) =>
-        e.emotionalEvaluations
-          .filter((ee: any) => ee.targetParticipantId.equals(participantId))
+      const emotionalScores = (meeting.evaluations as any[]).flatMap((e: any) =>
+        (e.emotionalEvaluations || [])
+          .filter((ee: any) => {
+            const targetId = ee.targetParticipantId?._id || ee.targetParticipantId;
+            return targetId.equals(participantId);
+          })
           .map((ee: any) => ({
             emotionalScale: ee.emotionalScale,
             isToxic: ee.isToxic,
@@ -255,7 +268,7 @@ export class MeetingsService {
 
       return {
         participant: {
-          _id: participant._id,
+          _id: participant._id || participant,
           fullName: participant.fullName,
           email: participant.email,
         },
@@ -265,13 +278,13 @@ export class MeetingsService {
       };
     });
 
-    const avgUnderstanding = participantStats.reduce(
-      (sum, p) => sum + p.understandingScore, 0
-    ) / participantStats.length;
+    const avgUnderstanding = participantStats.length > 0
+      ? participantStats.reduce((sum, p) => sum + p.understandingScore, 0) / participantStats.length
+      : 0;
 
     return {
       question: meeting.question,
-      averageUnderstanding,
+      avgUnderstanding,
       participantStats,
     };
   }

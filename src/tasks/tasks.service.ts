@@ -53,7 +53,7 @@ export class TasksService {
       .exec();
   }
 
-  async findOne(id: string, userId: string): Promise<Task> {
+  async findOne(id: string, userId: string): Promise<TaskDocument> {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Invalid task ID');
     }
@@ -70,23 +70,25 @@ export class TasksService {
 
     // Allow viewing if user is the author
     const userObjectId = new Types.ObjectId(userId);
-    if (!task.authorId['_id'].equals(userObjectId)) {
+    const authorId = (task.authorId as any)?._id || task.authorId;
+    if (!authorId.equals(userObjectId)) {
       throw new ForbiddenException('You can only view your own tasks');
     }
 
     return task;
   }
 
-  async update(id: string, updateTaskDto: UpdateTaskDto, userId: string): Promise<Task> {
+  async update(id: string, updateTaskDto: UpdateTaskDto, userId: string): Promise<TaskDocument> {
     const task = await this.findOne(id, userId);
 
     // Only author can update task
-    if (!task.authorId['_id'].equals(new Types.ObjectId(userId))) {
+    const authorId = (task.authorId as any)?._id || task.authorId;
+    if (!authorId.equals(new Types.ObjectId(userId))) {
       throw new ForbiddenException('Only the task author can update the task');
     }
 
     if (updateTaskDto.deadline) {
-      updateTaskDto['deadline'] = new Date(updateTaskDto.deadline);
+      (updateTaskDto as any).deadline = new Date(updateTaskDto.deadline);
     }
 
     Object.assign(task, updateTaskDto);
@@ -97,7 +99,8 @@ export class TasksService {
     const task = await this.findOne(id, userId);
 
     // Only author can delete task
-    if (!task.authorId['_id'].equals(new Types.ObjectId(userId))) {
+    const authorId = (task.authorId as any)?._id || task.authorId;
+    if (!authorId.equals(new Types.ObjectId(userId))) {
       throw new ForbiddenException('Only the task author can delete the task');
     }
 
