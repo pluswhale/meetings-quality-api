@@ -43,10 +43,19 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
   
-  const port = process.env.PORT || 3000;
+  const port = parseInt(process.env.PORT, 10) || 3002;
+  
+  console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔌 Attempting to bind to port: ${port}`);
+  
   await app.listen(port, '0.0.0.0');
   
-  console.log(`🚀 Application is running on: http://localhost:${port}`);
-  console.log(`📚 Swagger documentation: http://localhost:${port}/api`);
+  console.log(`🚀 Application is running on port: ${port}`);
+  console.log(`📚 Swagger documentation available at: /api`);
+  console.log(`✅ Server successfully started!`);
 }
-bootstrap();
+
+bootstrap().catch((error) => {
+  console.error('❌ Failed to start application:', error);
+  process.exit(1);
+});
