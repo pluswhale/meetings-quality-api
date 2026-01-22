@@ -19,4 +19,5 @@ RUN npm run build
 EXPOSE 4000
 
 # Install dependencies again in case package.json changed (for dev with volumes)
-CMD ["sh", "-c", "npm install && npm run start:dev"]
+# Generate OpenAPI spec before starting
+CMD ["sh", "-c", "npm install && npm run openapi:generate && npm run start:dev"]

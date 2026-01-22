@@ -43,11 +43,8 @@ export class MeetingsService {
   }
 
   async findAll(userId: string, filter?: 'current' | 'past'): Promise<Meeting[]> {
-    const userObjectId = new Types.ObjectId(userId);
-    
-    const query: any = {
-      participantIds: userObjectId,
-    };
+    // Allow all logged-in users to see all meetings
+    const query: any = {};
 
     if (filter === 'current') {
       query.status = { $in: [MeetingStatus.UPCOMING, MeetingStatus.ACTIVE] };
@@ -82,15 +79,8 @@ export class MeetingsService {
       throw new NotFoundException('Meeting not found');
     }
 
-    // Check if user is a participant
-    const userObjectId = new Types.ObjectId(userId);
-    const isParticipant = meeting.participantIds.some(
-      (id: any) => id._id.equals(userObjectId)
-    );
-
-    if (!isParticipant) {
-      throw new ForbiddenException('You are not a participant of this meeting');
-    }
+    // Allow all logged-in users to view any meeting
+    // No participant check needed
 
     return meeting;
   }
