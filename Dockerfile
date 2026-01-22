@@ -18,5 +18,5 @@ RUN npm run build
 # Expose the port
 EXPOSE 4000
 
-# Start the application in development mode
-CMD ["npm", "run", "start:dev"]
+# Install dependencies again in case package.json changed (for dev with volumes)
+CMD ["sh", "-c", "npm install && npm run start:dev"]
