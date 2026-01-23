@@ -20,6 +20,7 @@
 ### Important: Whitelist Render IPs
 
 In MongoDB Atlas, you need to allow connections from Render:
+
 1. Go to MongoDB Atlas Dashboard
 2. Navigate to **Network Access**
 3. Click **"Add IP Address"**
@@ -31,6 +32,7 @@ In MongoDB Atlas, you need to allow connections from Render:
 ### Manual Setup (Recommended)
 
 1. Push your code to GitHub:
+
    ```bash
    git add .
    git commit -m "Configure for Render deployment"
@@ -49,10 +51,11 @@ In MongoDB Atlas, you need to allow connections from Render:
    - **Region**: Choose your preferred region
    - **Branch**: `main`
    - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `npm run start` (or `npm run start:prod`)
+     dddd - **Start Command**: `npm run start` (or `npm run start:prod`)
    - **Instance Type**: Free (512 MB RAM)
 
 6. Add Environment Variables (click "Advanced" → "Add Environment Variable"):
+
    ```
    NODE_ENV = production
    MONGODB_URI = <your-mongodb-atlas-connection-string>
@@ -72,6 +75,7 @@ In MongoDB Atlas, you need to allow connections from Render:
 Once deployed, your API will be available at: `https://meetings-quality-api.onrender.com` (or your custom URL)
 
 Test endpoints:
+
 - Health check: `GET /`
 - Swagger docs: `GET /api`
 - OpenAPI spec: `GET /api-json`
@@ -106,23 +110,28 @@ Update your frontend URL in Render environment variables to enable CORS.
 ## Troubleshooting
 
 ### Memory Issues (JavaScript heap out of memory)
+
 If you see "FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory":
+
 1. ✅ **Already Fixed**: The `start` script now includes `--max-old-space-size=460` flag
 2. ✅ **Verify NODE_ENV**: Ensure `NODE_ENV=production` is set in Render environment variables
    - This disables Swagger docs in production, saving memory
 3. If issues persist, consider upgrading to a paid instance with more RAM
 
 ### Connection Issues
+
 - Verify MongoDB Atlas IP whitelist includes Render IPs
 - Check MONGODB_URI is correctly set in Render environment variables
 - Ensure database user has correct permissions
 
 ### Build Failures
+
 - Check Node.js version compatibility
 - Verify all dependencies are in `package.json`
 - Review build logs in Render dashboard
 
 ### Runtime Errors
+
 - Check environment variables are set correctly
 - Review application logs in Render dashboard
 - Verify MongoDB cluster is running
@@ -130,16 +139,19 @@ If you see "FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap 
 ## Useful Commands
 
 Generate a secure JWT secret:
+
 ```bash
 openssl rand -base64 32
 ```
 
 Test MongoDB connection locally:
+
 ```bash
 npm run start:dev
 ```
 
 Build for production locally:
+
 ```bash
 npm run build
 npm run start:prod
