@@ -38,6 +38,3 @@ lerna-debug.log*
 .env
 .env.local
 .env.production
-
-# Keep generated/openapi.json in git for frontend to use
-# generated/ is NOT ignored - we want to commit it!
