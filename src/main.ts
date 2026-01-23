@@ -25,6 +25,7 @@ async function bootstrap() {
       process.env.FRONTEND_URL || 'http://localhost:3001/',
       'http://209.38.214.211',
       'http://localhost:3000',
+      'https://pluswhale.github.io',
       'https://pluswhale.github.io/meetings-quality',
     ],
     credentials: true,

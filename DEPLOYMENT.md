@@ -51,7 +51,7 @@ In MongoDB Atlas, you need to allow connections from Render:
    - **Region**: Choose your preferred region
    - **Branch**: `main`
    - **Build Command**: `npm install && npm run build`
-     dddd - **Start Command**: `npm run start` (or `npm run start:prod`)
+   - **Start Command**: `npm run start` (or `npm run start:prod`)
    - **Instance Type**: Free (512 MB RAM)
 
 6. Add Environment Variables (click "Advanced" → "Add Environment Variable"):
