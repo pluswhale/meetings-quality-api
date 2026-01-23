@@ -8,10 +8,16 @@ import { join } from 'path';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   
-  // Serve generated OpenAPI file statically
-  app.useStaticAssets(join(__dirname, '..', 'generated'), {
-    prefix: '/generated',
-  });
+  // Serve generated OpenAPI file statically (only in development)
+  if (process.env.NODE_ENV !== 'production') {
+    try {
+      app.useStaticAssets(join(__dirname, '..', 'generated'), {
+        prefix: '/generated',
+      });
+    } catch (error) {
+      console.log('⚠️  Generated folder not found, skipping static assets');
+    }
+  }
   
   // Enable CORS
   app.enableCors({
@@ -29,30 +35,33 @@ async function bootstrap() {
     transform: true,
   }));
   
-  // Swagger configuration
-  const config = new DocumentBuilder()
-    .setTitle('Meetings Quality API')
-    .setDescription('API для платформы отслеживания качества встреч')
-    .setVersion('1.0')
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-        name: 'JWT',
-        description: 'Enter JWT token',
-        in: 'header',
-      },
-      'JWT-auth',
-    )
-    .addTag('auth', 'Аутентификация и авторизация')
-    .addTag('users', 'Управление пользователями')
-    .addTag('meetings', 'Управление встречами')
-    .addTag('tasks', 'Управление задачами')
-    .build();
-  
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api', app, document);
+  // Swagger configuration (only in development to save memory)
+  if (process.env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('Meetings Quality API')
+      .setDescription('API для платформы отслеживания качества встреч')
+      .setVersion('1.0')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          name: 'JWT',
+          description: 'Enter JWT token',
+          in: 'header',
+        },
+        'JWT-auth',
+      )
+      .addTag('auth', 'Аутентификация и авторизация')
+      .addTag('users', 'Управление пользователями')
+      .addTag('meetings', 'Управление встречами')
+      .addTag('tasks', 'Управление задачами')
+      .build();
+    
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api', app, document);
+    console.log('📚 Swagger documentation enabled at: /api');
+  }
   
   const port = parseInt(process.env.PORT, 10) || 3002;
   
@@ -61,10 +70,7 @@ async function bootstrap() {
   
   await app.listen(port, '0.0.0.0');
   
-  console.log(`🚀 Application is running on port: ${port}`);
-  console.log(`📚 Swagger documentation available at: /api`);
-  console.log(`📄 OpenAPI JSON available at: /api-json`);
-  console.log(`📦 Generated OpenAPI file: /generated/openapi.json`);
+  console.log(`🚀 Application is running on: http://0.0.0.0:${port}`);
   console.log(`✅ Server successfully started!`);
 }
 

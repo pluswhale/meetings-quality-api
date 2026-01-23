@@ -8,22 +8,27 @@
 
 ## MongoDB Atlas Setup
 
-✅ **Already configured!**
-- Connection URI: `mongodb+srv://mongouser:***@cluster0.3yldtew.mongodb.net/meetings-quality`
-- Database name: `meetings-quality`
+### Get Your Connection String
+
+1. Go to [MongoDB Atlas Dashboard](https://cloud.mongodb.com/)
+2. Navigate to your cluster
+3. Click **"Connect"** button
+4. Choose **"Connect your application"**
+5. Select **Driver: Node.js** and **Version: 5.5 or later**
+6. Copy the connection string
 
 ### Important: Whitelist Render IPs
 
 In MongoDB Atlas, you need to allow connections from Render:
 1. Go to MongoDB Atlas Dashboard
-2. Navigate to Network Access
-3. Click "Add IP Address"
-4. Choose "Allow Access from Anywhere" (0.0.0.0/0) for simplicity, or
-5. Add specific Render IPs if you prefer more security
+2. Navigate to **Network Access**
+3. Click **"Add IP Address"**
+4. Choose **"Allow Access from Anywhere"** (0.0.0.0/0) - required for Render
+5. Click **"Confirm"**
 
 ## Deploy to Render
 
-### Option 1: Using render.yaml (Recommended)
+### Manual Setup (Recommended)
 
 1. Push your code to GitHub:
    ```bash
@@ -34,45 +39,31 @@ In MongoDB Atlas, you need to allow connections from Render:
 
 2. Go to [Render Dashboard](https://dashboard.render.com/)
 
-3. Click "New +" → "Blueprint"
+3. Click **"New +"** → **"Web Service"**
 
 4. Connect your GitHub repository
 
-5. Render will automatically detect `render.yaml` and set up the service
-
-6. Add the following environment variables in Render dashboard:
-   - `MONGODB_URI`: `mongodb+srv://mongouser:lLe0W95BmfPd8tD7@cluster0.3yldtew.mongodb.net/meetings-quality?retryWrites=true&w=majority&appName=Cluster0`
-   - `JWT_SECRET`: Generate a strong secret (e.g., use `openssl rand -base64 32`)
-   - `FRONTEND_URL`: Your frontend URL (e.g., `https://your-frontend.onrender.com`)
-
-### Option 2: Manual Setup
-
-1. Go to [Render Dashboard](https://dashboard.render.com/)
-
-2. Click "New +" → "Web Service"
-
-3. Connect your GitHub repository
-
-4. Configure the service:
+5. Configure the service:
    - **Name**: `meetings-quality-api`
    - **Environment**: `Node`
    - **Region**: Choose your preferred region
    - **Branch**: `main`
    - **Build Command**: `npm install && npm run build`
    - **Start Command**: `npm run start:prod`
-   - **Plan**: Free (or paid as needed)
+   - **Instance Type**: Free
 
-5. Add Environment Variables:
+6. Add Environment Variables (click "Advanced" → "Add Environment Variable"):
    ```
-   NODE_ENV=production
-   MONGODB_URI=mongodb+srv://mongouser:lLe0W95BmfPd8tD7@cluster0.3yldtew.mongodb.net/meetings-quality?retryWrites=true&w=majority&appName=Cluster0
-   JWT_SECRET=<generate-a-strong-secret>
-   JWT_EXPIRATION=7d
-   FRONTEND_URL=<your-frontend-url>
-   PORT=10000
+   NODE_ENV = production
+   MONGODB_URI = <your-mongodb-atlas-connection-string>
+   JWT_SECRET = <generate-with: openssl rand -base64 32>
+   JWT_EXPIRATION = 7d
+   FRONTEND_URL = <your-frontend-url>
    ```
 
-6. Click "Create Web Service"
+7. Click **"Create Web Service"**
+
+8. Wait for deployment to complete (first deploy takes 5-10 minutes)
 
 ## Post-Deployment
 

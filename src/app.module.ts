@@ -5,6 +5,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { MeetingsModule } from './meetings/meetings.module';
 import { TasksModule } from './tasks/tasks.module';
+import { HealthController } from './health.controller';
 
 @Module({
   imports: [
@@ -23,5 +24,6 @@ import { TasksModule } from './tasks/tasks.module';
     MeetingsModule,
     TasksModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}
