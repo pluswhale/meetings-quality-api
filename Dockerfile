@@ -3,6 +3,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Install wget for health checks
+RUN apk add --no-cache wget
+
 # Copy package files
 COPY package*.json ./
 
@@ -19,5 +22,5 @@ RUN npm run build
 EXPOSE 4000
 
 # Install dependencies again in case package.json changed (for dev with volumes)
-# Generate OpenAPI spec before starting
-CMD ["sh", "-c", "npm install && npm run openapi:generate && npm run start:dev"]
+# Generate OpenAPI spec before starting (continue even if it fails)
+CMD ["sh", "-c", "npm install && (npm run openapi:generate || echo 'OpenAPI generation skipped') && npm run start:dev"]
