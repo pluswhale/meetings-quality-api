@@ -49,8 +49,8 @@ In MongoDB Atlas, you need to allow connections from Render:
    - **Region**: Choose your preferred region
    - **Branch**: `main`
    - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `npm run start:prod`
-   - **Instance Type**: Free
+   - **Start Command**: `npm run start` (or `npm run start:prod`)
+   - **Instance Type**: Free (512 MB RAM)
 
 6. Add Environment Variables (click "Advanced" → "Add Environment Variable"):
    ```
@@ -104,6 +104,13 @@ Update your frontend URL in Render environment variables to enable CORS.
 - Set up alerts for errors and high usage
 
 ## Troubleshooting
+
+### Memory Issues (JavaScript heap out of memory)
+If you see "FATAL ERROR: Reached heap limit Allocation failed - JavaScript heap out of memory":
+1. ✅ **Already Fixed**: The `start` script now includes `--max-old-space-size=460` flag
+2. ✅ **Verify NODE_ENV**: Ensure `NODE_ENV=production` is set in Render environment variables
+   - This disables Swagger docs in production, saving memory
+3. If issues persist, consider upgrading to a paid instance with more RAM
 
 ### Connection Issues
 - Verify MongoDB Atlas IP whitelist includes Render IPs
