@@ -12,12 +12,9 @@ RUN npm install
 # Copy source code
 COPY . .
 
-# Build the application
-RUN npm run build
-
 # Expose the port
 EXPOSE 4000
 
-# Install dependencies again in case package.json changed (for dev with volumes)
-# Generate OpenAPI spec before starting (continue even if it fails)
-CMD ["sh", "-c", "npm run start:prod"]
+# Start in development mode (works with volume mounts)
+# Install deps and generate OpenAPI, then start server
+CMD ["sh", "-c", "npm install && npm run build && npm run openapi:generate && npm run start:dev"]
