@@ -20,4 +20,4 @@ EXPOSE 4000
 
 # Install dependencies again in case package.json changed (for dev with volumes)
 # Generate OpenAPI spec before starting (continue even if it fails)
-CMD ["sh", "-c", "npm install && npm run start:prod"]
+CMD ["sh", "-c", "npm run start:prod"]
