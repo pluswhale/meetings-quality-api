@@ -21,8 +21,9 @@ import { MeetingsService } from './meetings.service';
 import { CreateMeetingDto } from './dto/create-meeting.dto';
 import { UpdateMeetingDto } from './dto/update-meeting.dto';
 import { ChangePhaseDto } from './dto/change-phase.dto';
-import { SubmitEvaluationDto } from './dto/submit-evaluation.dto';
-import { SubmitSummaryDto } from './dto/submit-summary.dto';
+import { SubmitEmotionalEvaluationDto } from './dto/submit-emotional-evaluation.dto';
+import { SubmitUnderstandingContributionDto } from './dto/submit-understanding-contribution.dto';
+import { SubmitTaskPlanningDto } from './dto/submit-task-planning.dto';
 import { MeetingResponseDto, StatisticsResponseDto } from './dto/meeting-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -131,40 +132,87 @@ export class MeetingsController {
     return this.meetingsService.changePhase(id, changePhaseDto, user.userId);
   }
 
-  @Post(':id/evaluations')
-  @ApiOperation({ summary: 'Отправить оценку (фаза evaluation)' })
+  @Post(':id/emotional-evaluations')
+  @ApiOperation({ summary: 'Отправить эмоциональную оценку (фаза emotional_evaluation, только участники)' })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
     status: 201,
-    description: 'Оценка отправлена',
+    description: 'Эмоциональная оценка отправлена',
     type: MeetingResponseDto,
   })
-  @ApiResponse({ status: 400, description: 'Встреча не в фазе evaluation' })
+  @ApiResponse({ status: 400, description: 'Встреча не в фазе emotional_evaluation' })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
-  submitEvaluation(
+  @ApiResponse({ status: 403, description: 'Создатель встречи не может отправлять оценки' })
+  submitEmotionalEvaluation(
     @Param('id') id: string,
-    @Body() evaluationDto: SubmitEvaluationDto,
+    @Body() evaluationDto: SubmitEmotionalEvaluationDto,
     @CurrentUser() user: any,
   ) {
-    return this.meetingsService.submitEvaluation(id, evaluationDto, user.userId);
+    return this.meetingsService.submitEmotionalEvaluation(id, evaluationDto, user.userId);
   }
 
-  @Post(':id/summaries')
-  @ApiOperation({ summary: 'Отправить резюме (фаза summary)' })
+  @Post(':id/understanding-contributions')
+  @ApiOperation({ summary: 'Отправить понимание и вклад (фаза understanding_contribution, только участники)' })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
     status: 201,
-    description: 'Резюме отправлено',
+    description: 'Понимание и вклад отправлены',
     type: MeetingResponseDto,
   })
-  @ApiResponse({ status: 400, description: 'Встреча не в фазе summary' })
+  @ApiResponse({ status: 400, description: 'Встреча не в фазе understanding_contribution' })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
-  submitSummary(
+  @ApiResponse({ status: 403, description: 'Создатель встречи не может отправлять оценки' })
+  submitUnderstandingContribution(
     @Param('id') id: string,
-    @Body() summaryDto: SubmitSummaryDto,
+    @Body() contributionDto: SubmitUnderstandingContributionDto,
     @CurrentUser() user: any,
   ) {
-    return this.meetingsService.submitSummary(id, summaryDto, user.userId);
+    return this.meetingsService.submitUnderstandingContribution(id, contributionDto, user.userId);
+  }
+
+  @Post(':id/task-plannings')
+  @ApiOperation({ summary: 'Отправить планирование задачи (фаза task_planning, только участники)' })
+  @ApiParam({ name: 'id', description: 'ID встречи' })
+  @ApiResponse({
+    status: 201,
+    description: 'Планирование задачи отправлено и задача создана',
+    type: MeetingResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Встреча не в фазе task_planning' })
+  @ApiResponse({ status: 401, description: 'Не авторизован' })
+  @ApiResponse({ status: 403, description: 'Создатель встречи не может отправлять задачи' })
+  submitTaskPlanning(
+    @Param('id') id: string,
+    @Body() taskDto: SubmitTaskPlanningDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.meetingsService.submitTaskPlanning(id, taskDto, user.userId);
+  }
+
+  @Get(':id/voting-info')
+  @ApiOperation({ summary: 'Получить информацию о голосовании (только создатель)' })
+  @ApiParam({ name: 'id', description: 'ID встречи' })
+  @ApiResponse({
+    status: 200,
+    description: 'Информация о голосовании',
+  })
+  @ApiResponse({ status: 401, description: 'Не авторизован' })
+  @ApiResponse({ status: 403, description: 'Только создатель может просматривать информацию о голосовании' })
+  getVotingInfo(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.meetingsService.getVotingInfo(id, user.userId);
+  }
+
+  @Get(':id/phase-submissions')
+  @ApiOperation({ summary: 'Получить детальную информацию о всех ответах участников (только создатель)' })
+  @ApiParam({ name: 'id', description: 'ID встречи' })
+  @ApiResponse({
+    status: 200,
+    description: 'Детальная информация о всех ответах участников по всем фазам',
+  })
+  @ApiResponse({ status: 401, description: 'Не авторизован' })
+  @ApiResponse({ status: 403, description: 'Только создатель может просматривать ответы участников' })
+  getPhaseSubmissions(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.meetingsService.getPhaseSubmissions(id, user.userId);
   }
 
   @Get(':id/statistics')
