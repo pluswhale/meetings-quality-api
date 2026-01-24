@@ -8,7 +8,7 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
-export class SubmitSummaryDto {
+export class SubmitTaskPlanningDto {
   @ApiProperty({
     description: 'Описание задачи',
     example: 'Реализовать аутентификацию пользователей',
@@ -26,7 +26,7 @@ export class SubmitSummaryDto {
   deadline: string;
 
   @ApiProperty({
-    description: 'Важность личного вклада в понимание (0-100)',
+    description: 'Ожидаемый процент вклада в задачу (0-100)',
     example: 90,
     minimum: 0,
     maximum: 100,
@@ -35,5 +35,5 @@ export class SubmitSummaryDto {
   @IsNumber()
   @Min(0)
   @Max(100)
-  contributionImportance: number;
+  expectedContributionPercentage: number;
 }
