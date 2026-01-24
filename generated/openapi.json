@@ -1,6 +1,28 @@
 {
   "openapi": "3.0.0",
   "paths": {
+    "/": {
+      "get": {
+        "operationId": "HealthController_getHealth",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "HealthController_getHealthCheck",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        }
+      }
+    },
     "/auth/register": {
       "post": {
         "operationId": "AuthController_register",
@@ -403,10 +425,10 @@
         ]
       }
     },
-    "/meetings/{id}/evaluations": {
+    "/meetings/{id}/emotional-evaluations": {
       "post": {
-        "operationId": "MeetingsController_submitEvaluation",
-        "summary": "Отправить оценку (фаза evaluation)",
+        "operationId": "MeetingsController_submitEmotionalEvaluation",
+        "summary": "Отправить эмоциональную оценку (фаза emotional_evaluation, только участники)",
         "parameters": [
           {
             "name": "id",
@@ -423,14 +445,14 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SubmitEvaluationDto"
+                "$ref": "#/components/schemas/SubmitEmotionalEvaluationDto"
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "Оценка отправлена",
+            "description": "Эмоциональная оценка отправлена",
             "content": {
               "application/json": {
                 "schema": {
@@ -440,10 +462,13 @@
             }
           },
           "400": {
-            "description": "Встреча не в фазе evaluation"
+            "description": "Встреча не в фазе emotional_evaluation"
           },
           "401": {
             "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Создатель встречи не может отправлять оценки"
           }
         },
         "tags": [
@@ -456,10 +481,10 @@
         ]
       }
     },
-    "/meetings/{id}/summaries": {
+    "/meetings/{id}/understanding-contributions": {
       "post": {
-        "operationId": "MeetingsController_submitSummary",
-        "summary": "Отправить резюме (фаза summary)",
+        "operationId": "MeetingsController_submitUnderstandingContribution",
+        "summary": "Отправить понимание и вклад (фаза understanding_contribution, только участники)",
         "parameters": [
           {
             "name": "id",
@@ -476,14 +501,14 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SubmitSummaryDto"
+                "$ref": "#/components/schemas/SubmitUnderstandingContributionDto"
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "Резюме отправлено",
+            "description": "Понимание и вклад отправлены",
             "content": {
               "application/json": {
                 "schema": {
@@ -493,10 +518,141 @@
             }
           },
           "400": {
-            "description": "Встреча не в фазе summary"
+            "description": "Встреча не в фазе understanding_contribution"
           },
           "401": {
             "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Создатель встречи не может отправлять оценки"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/meetings/{id}/task-plannings": {
+      "post": {
+        "operationId": "MeetingsController_submitTaskPlanning",
+        "summary": "Отправить планирование задачи (фаза task_planning, только участники)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitTaskPlanningDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Планирование задачи отправлено и задача создана",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Встреча не в фазе task_planning"
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Создатель встречи не может отправлять задачи"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/meetings/{id}/voting-info": {
+      "get": {
+        "operationId": "MeetingsController_getVotingInfo",
+        "summary": "Получить информацию о голосовании (только создатель)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Информация о голосовании"
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Только создатель может просматривать информацию о голосовании"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/meetings/{id}/phase-submissions": {
+      "get": {
+        "operationId": "MeetingsController_getPhaseSubmissions",
+        "summary": "Получить детальную информацию о всех ответах участников (только создатель)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Детальная информация о всех ответах участников по всем фазам"
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Только создатель может просматривать ответы участников"
           }
         },
         "tags": [
@@ -968,6 +1124,159 @@
           "question"
         ]
       },
+      "EmotionalEvaluationItemDto": {
+        "type": "object",
+        "properties": {
+          "targetParticipantId": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439012",
+            "description": "ID участника, которого оценивают"
+          },
+          "emotionalScale": {
+            "type": "number",
+            "example": 85,
+            "minimum": -100,
+            "maximum": 100,
+            "description": "Эмоциональная оценка"
+          },
+          "isToxic": {
+            "type": "boolean",
+            "example": false,
+            "description": "Флаг токсичности"
+          }
+        },
+        "required": [
+          "targetParticipantId",
+          "emotionalScale",
+          "isToxic"
+        ]
+      },
+      "EmotionalEvaluationDto": {
+        "type": "object",
+        "properties": {
+          "participantId": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439011",
+            "description": "ID участника, который оценивал"
+          },
+          "evaluations": {
+            "description": "Оценки других участников",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmotionalEvaluationItemDto"
+            }
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-01-24T10:30:00.000Z",
+            "description": "Дата отправки"
+          }
+        },
+        "required": [
+          "participantId",
+          "evaluations",
+          "submittedAt"
+        ]
+      },
+      "ContributionItemDto": {
+        "type": "object",
+        "properties": {
+          "participantId": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439012",
+            "description": "ID участника"
+          },
+          "contributionPercentage": {
+            "type": "number",
+            "example": 60,
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Процент вклада"
+          }
+        },
+        "required": [
+          "participantId",
+          "contributionPercentage"
+        ]
+      },
+      "UnderstandingContributionDto": {
+        "type": "object",
+        "properties": {
+          "participantId": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439011",
+            "description": "ID участника"
+          },
+          "understandingScore": {
+            "type": "number",
+            "example": 90,
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Оценка понимания"
+          },
+          "contributions": {
+            "description": "Распределение вклада",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContributionItemDto"
+            }
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-01-24T11:00:00.000Z",
+            "description": "Дата отправки"
+          }
+        },
+        "required": [
+          "participantId",
+          "understandingScore",
+          "contributions",
+          "submittedAt"
+        ]
+      },
+      "TaskPlanningDto": {
+        "type": "object",
+        "properties": {
+          "participantId": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439011",
+            "description": "ID участника"
+          },
+          "taskDescription": {
+            "type": "string",
+            "example": "Implement authentication",
+            "description": "Описание задачи"
+          },
+          "deadline": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-02-01T00:00:00.000Z",
+            "description": "Дедлайн"
+          },
+          "expectedContributionPercentage": {
+            "type": "number",
+            "example": 80,
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Ожидаемый процент вклада"
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-01-24T11:30:00.000Z",
+            "description": "Дата отправки"
+          }
+        },
+        "required": [
+          "participantId",
+          "taskDescription",
+          "deadline",
+          "expectedContributionPercentage",
+          "submittedAt"
+        ]
+      },
       "MeetingResponseDto": {
         "type": "object",
         "properties": {
@@ -985,13 +1294,15 @@
           },
           "creatorId": {
             "type": "string",
-            "example": "507f1f77bcf86cd799439011"
+            "example": "507f1f77bcf86cd799439011",
+            "description": "ID создателя встречи (строка)"
           },
           "participantIds": {
             "example": [
               "507f1f77bcf86cd799439011",
               "507f1f77bcf86cd799439012"
             ],
+            "description": "Массив ID участников (строки)",
             "type": "array",
             "items": {
               "type": "string"
@@ -1001,8 +1312,9 @@
             "type": "string",
             "enum": [
               "discussion",
-              "evaluation",
-              "summary",
+              "emotional_evaluation",
+              "understanding_contribution",
+              "task_planning",
               "finished"
             ],
             "example": "discussion"
@@ -1015,6 +1327,27 @@
               "finished"
             ],
             "example": "upcoming"
+          },
+          "emotionalEvaluations": {
+            "description": "Эмоциональные оценки участников",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmotionalEvaluationDto"
+            }
+          },
+          "understandingContributions": {
+            "description": "Понимание и вклад участников",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnderstandingContributionDto"
+            }
+          },
+          "taskPlannings": {
+            "description": "Планирование задач участников",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskPlanningDto"
+            }
           },
           "createdAt": {
             "format": "date-time",
@@ -1035,6 +1368,9 @@
           "participantIds",
           "currentPhase",
           "status",
+          "emotionalEvaluations",
+          "understandingContributions",
+          "taskPlannings",
           "createdAt",
           "updatedAt"
         ]
@@ -1072,39 +1408,19 @@
             "description": "Новая фаза встречи",
             "enum": [
               "discussion",
-              "evaluation",
-              "summary",
+              "emotional_evaluation",
+              "understanding_contribution",
+              "task_planning",
               "finished"
             ],
-            "example": "evaluation"
+            "example": "emotional_evaluation"
           }
         },
         "required": [
           "phase"
         ]
       },
-      "UnderstandingInfluenceDto": {
-        "type": "object",
-        "properties": {
-          "participantId": {
-            "type": "string",
-            "description": "ID участника",
-            "example": "507f1f77bcf86cd799439012"
-          },
-          "influencePercentage": {
-            "type": "number",
-            "description": "Процент влияния участника на понимание (0-100)",
-            "example": 60,
-            "minimum": 0,
-            "maximum": 100
-          }
-        },
-        "required": [
-          "participantId",
-          "influencePercentage"
-        ]
-      },
-      "EmotionalEvaluationDto": {
+      "ParticipantEmotionalEvaluationDto": {
         "type": "object",
         "properties": {
           "targetParticipantId": {
@@ -1131,7 +1447,43 @@
           "isToxic"
         ]
       },
-      "SubmitEvaluationDto": {
+      "SubmitEmotionalEvaluationDto": {
+        "type": "object",
+        "properties": {
+          "evaluations": {
+            "description": "Эмоциональные оценки других участников",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ParticipantEmotionalEvaluationDto"
+            }
+          }
+        },
+        "required": [
+          "evaluations"
+        ]
+      },
+      "ContributionInfluenceDto": {
+        "type": "object",
+        "properties": {
+          "participantId": {
+            "type": "string",
+            "description": "ID участника",
+            "example": "507f1f77bcf86cd799439012"
+          },
+          "contributionPercentage": {
+            "type": "number",
+            "description": "Процент вклада участника в обсуждение (0-100)",
+            "example": 60,
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "participantId",
+          "contributionPercentage"
+        ]
+      },
+      "SubmitUnderstandingContributionDto": {
         "type": "object",
         "properties": {
           "understandingScore": {
@@ -1141,28 +1493,20 @@
             "minimum": 0,
             "maximum": 100
           },
-          "influences": {
-            "description": "Влияние других участников на понимание",
+          "contributions": {
+            "description": "Распределение вклада участников в обсуждение",
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/UnderstandingInfluenceDto"
-            }
-          },
-          "emotionalEvaluations": {
-            "description": "Эмоциональные оценки других участников",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/EmotionalEvaluationDto"
+              "$ref": "#/components/schemas/ContributionInfluenceDto"
             }
           }
         },
         "required": [
           "understandingScore",
-          "influences",
-          "emotionalEvaluations"
+          "contributions"
         ]
       },
-      "SubmitSummaryDto": {
+      "SubmitTaskPlanningDto": {
         "type": "object",
         "properties": {
           "taskDescription": {
@@ -1175,9 +1519,9 @@
             "description": "Дедлайн задачи (ISO формат)",
             "example": "2026-02-01T00:00:00.000Z"
           },
-          "contributionImportance": {
+          "expectedContributionPercentage": {
             "type": "number",
-            "description": "Важность личного вклада в понимание (0-100)",
+            "description": "Ожидаемый процент вклада в задачу (0-100)",
             "example": 90,
             "minimum": 0,
             "maximum": 100
@@ -1186,7 +1530,7 @@
         "required": [
           "taskDescription",
           "deadline",
-          "contributionImportance"
+          "expectedContributionPercentage"
         ]
       },
       "StatisticsResponseDto": {
