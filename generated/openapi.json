@@ -425,6 +425,89 @@
         ]
       }
     },
+    "/meetings/{id}/join": {
+      "post": {
+        "operationId": "MeetingsController_joinMeeting",
+        "summary": "Присоединиться к встрече (войти в комнату)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Участник присоединился к встрече",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Только участники могут присоединиться к встрече"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/meetings/{id}/leave": {
+      "post": {
+        "operationId": "MeetingsController_leaveMeeting",
+        "summary": "Покинуть встречу (выйти из комнаты)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Участник покинул встречу",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Не авторизован"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
     "/meetings/{id}/emotional-evaluations": {
       "post": {
         "operationId": "MeetingsController_submitEmotionalEvaluation",
@@ -617,6 +700,75 @@
           },
           "403": {
             "description": "Только создатель может просматривать информацию о голосовании"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/meetings/{id}/active-participants": {
+      "get": {
+        "operationId": "MeetingsController_getActiveParticipants",
+        "summary": "Получить список активных участников в комнате встречи",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список активных участников"
+          },
+          "401": {
+            "description": "Не авторизован"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/meetings/{id}/all-submissions": {
+      "get": {
+        "operationId": "MeetingsController_getAllSubmissions",
+        "summary": "Получить все ответы участников в упрощенном формате (только создатель)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Все ответы участников по всем фазам в упрощенном формате"
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Только создатель может просматривать все ответы"
           }
         },
         "tags": [
@@ -1308,6 +1460,16 @@
               "type": "string"
             }
           },
+          "activeParticipantIds": {
+            "example": [
+              "507f1f77bcf86cd799439011"
+            ],
+            "description": "Массив ID активных участников, которые сейчас в комнате встречи",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "currentPhase": {
             "type": "string",
             "enum": [
@@ -1366,6 +1528,7 @@
           "question",
           "creatorId",
           "participantIds",
+          "activeParticipantIds",
           "currentPhase",
           "status",
           "emotionalEvaluations",

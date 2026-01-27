@@ -144,6 +144,13 @@ export class MeetingResponseDto {
   })
   participantIds: string[];
 
+  @ApiProperty({ 
+    example: ['507f1f77bcf86cd799439011'],
+    type: [String],
+    description: 'Массив ID активных участников, которые сейчас в комнате встречи'
+  })
+  activeParticipantIds: string[];
+
   @ApiProperty({ enum: MeetingPhase, example: MeetingPhase.DISCUSSION })
   currentPhase: MeetingPhase;
 

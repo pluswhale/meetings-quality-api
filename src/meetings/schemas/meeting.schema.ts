@@ -94,6 +94,21 @@ export class TaskPlanning {
 
 export const TaskPlanningSchema = SchemaFactory.createForClass(TaskPlanning);
 
+// Active Participant tracking with timestamps
+@Schema({ _id: false })
+export class ActiveParticipant {
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  participantId: Types.ObjectId;
+
+  @Prop({ default: Date.now })
+  joinedAt: Date;
+
+  @Prop({ default: Date.now })
+  lastSeen: Date;
+}
+
+export const ActiveParticipantSchema = SchemaFactory.createForClass(ActiveParticipant);
+
 export type MeetingDocument = Meeting & Document;
 
 @Schema({ timestamps: true })
@@ -109,6 +124,9 @@ export class Meeting {
 
   @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
   participantIds: Types.ObjectId[];
+
+  @Prop({ type: [ActiveParticipantSchema], default: [] })
+  activeParticipants: ActiveParticipant[];
 
   @Prop({ 
     type: String, 

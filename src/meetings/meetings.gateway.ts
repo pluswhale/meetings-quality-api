@@ -59,4 +59,18 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
       ...data,
     });
   }
+
+  emitParticipantJoined(meetingId: string, userId: string) {
+    this.server.to(`meeting-${meetingId}`).emit('participantJoined', {
+      meetingId,
+      userId,
+    });
+  }
+
+  emitParticipantLeft(meetingId: string, userId: string) {
+    this.server.to(`meeting-${meetingId}`).emit('participantLeft', {
+      meetingId,
+      userId,
+    });
+  }
 }

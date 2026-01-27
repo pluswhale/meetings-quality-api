@@ -65,6 +65,9 @@ export class MeetingsService {
       question: meeting.question,
       creatorId: transformId(meeting.creatorId),
       participantIds: (meeting.participantIds || []).map(transformId),
+      activeParticipantIds: (meeting.activeParticipants || []).map((ap: any) => 
+        transformId(ap.participantId)
+      ),
       currentPhase: meeting.currentPhase,
       status: meeting.status,
       emotionalEvaluations: (meeting.emotionalEvaluations || []).map(transformEvaluation),
@@ -127,6 +130,7 @@ export class MeetingsService {
       .findById(id)
       .populate('creatorId', 'fullName email')
       .populate('participantIds', 'fullName email')
+      .populate('activeParticipants.participantId', 'fullName email')
       .populate('emotionalEvaluations.participantId', 'fullName email')
       .populate('emotionalEvaluations.evaluations.targetParticipantId', 'fullName email')
       .populate('understandingContributions.participantId', 'fullName email')
@@ -348,6 +352,187 @@ export class MeetingsService {
     return this.transformMeetingResponse(saved);
   }
 
+  async joinMeeting(id: string, userId: string): Promise<any> {
+    const meeting = await this.findOneInternal(id, userId);
+    const userObjectId = new Types.ObjectId(userId);
+
+    // Check if user is a participant
+    const isParticipant = (meeting.participantIds as any[]).some((pId: any) => {
+      const participantId = pId._id || pId;
+      return participantId.equals(userObjectId);
+    });
+
+    if (!isParticipant) {
+      throw new ForbiddenException('Only participants can join the meeting');
+    }
+
+    const now = new Date();
+
+    // Check if already active
+    const existingIndex = (meeting.activeParticipants as any[]).findIndex((ap: any) => {
+      const apId = ap.participantId?._id || ap.participantId;
+      return apId.equals(userObjectId);
+    });
+
+    if (existingIndex >= 0) {
+      // Update lastSeen
+      (meeting.activeParticipants as any[])[existingIndex].lastSeen = now;
+    } else {
+      // Add new active participant
+      (meeting.activeParticipants as any[]).push({
+        participantId: userObjectId,
+        joinedAt: now,
+        lastSeen: now,
+      });
+    }
+
+    await meeting.save();
+
+    // Emit WebSocket event
+    this.meetingsGateway.emitParticipantJoined(id, userId);
+
+    // Get populated active participants for response
+    const populatedMeeting = await this.findOneInternal(id, userId);
+    const activeParticipants = (populatedMeeting.activeParticipants as any[]).map((ap: any) => ({
+      _id: (ap.participantId?._id || ap.participantId).toString(),
+      fullName: ap.participantId?.fullName || null,
+      email: ap.participantId?.email || null,
+      isActive: true,
+      joinedAt: ap.joinedAt,
+      lastSeen: ap.lastSeen,
+    }));
+
+    return {
+      meetingId: id,
+      userId,
+      joinedAt: now,
+      activeParticipants,
+    };
+  }
+
+  async leaveMeeting(id: string, userId: string): Promise<any> {
+    const meeting = await this.findOneInternal(id, userId);
+    const userObjectId = new Types.ObjectId(userId);
+
+    // Remove from active participants
+    meeting.activeParticipants = (meeting.activeParticipants as any[]).filter((ap: any) => {
+      const apId = ap.participantId?._id || ap.participantId;
+      return !apId.equals(userObjectId);
+    });
+
+    await meeting.save();
+
+    // Emit WebSocket event
+    this.meetingsGateway.emitParticipantLeft(id, userId);
+
+    return { success: true };
+  }
+
+  async getActiveParticipants(id: string, userId: string): Promise<any> {
+    const meeting = await this.findOneInternal(id, userId);
+
+    // Map active participants with details
+    const activeParticipants = (meeting.activeParticipants as any[]).map((ap: any) => ({
+      _id: (ap.participantId?._id || ap.participantId).toString(),
+      fullName: ap.participantId?.fullName || null,
+      email: ap.participantId?.email || null,
+      isActive: true,
+      joinedAt: ap.joinedAt,
+      lastSeen: ap.lastSeen,
+    }));
+
+    const totalParticipants = (meeting.participantIds || []).length;
+    const activeCount = activeParticipants.length;
+
+    return {
+      meetingId: id,
+      activeParticipants,
+      totalParticipants,
+      activeCount,
+    };
+  }
+
+  async getAllSubmissions(id: string, userId: string): Promise<any> {
+    const meeting = await this.findOneInternal(id, userId);
+
+    // Only creator can view all submissions
+    const creatorId = (meeting.creatorId as any)?._id || meeting.creatorId;
+    if (!creatorId.equals(new Types.ObjectId(userId))) {
+      throw new ForbiddenException('Only the meeting creator can view all submissions');
+    }
+
+    const submissions: any = {};
+
+    // Emotional Evaluations
+    submissions.emotional_evaluation = {};
+    (meeting.emotionalEvaluations as any[]).forEach((evaluation: any) => {
+      const participantId = (evaluation.participantId?._id || evaluation.participantId).toString();
+      submissions.emotional_evaluation[participantId] = {
+        participant: {
+          _id: participantId,
+          fullName: evaluation.participantId?.fullName || null,
+          email: evaluation.participantId?.email || null,
+        },
+        submitted: true,
+        submittedAt: evaluation.submittedAt,
+        evaluations: (evaluation.evaluations || []).map((e: any) => ({
+          targetParticipant: {
+            _id: (e.targetParticipantId?._id || e.targetParticipantId).toString(),
+            fullName: e.targetParticipantId?.fullName || null,
+          },
+          emotionalScale: e.emotionalScale,
+          isToxic: e.isToxic,
+        })),
+      };
+    });
+
+    // Understanding Contributions
+    submissions.understanding_contribution = {};
+    (meeting.understandingContributions as any[]).forEach((contrib: any) => {
+      const participantId = (contrib.participantId?._id || contrib.participantId).toString();
+      submissions.understanding_contribution[participantId] = {
+        participant: {
+          _id: participantId,
+          fullName: contrib.participantId?.fullName || null,
+          email: contrib.participantId?.email || null,
+        },
+        submitted: true,
+        submittedAt: contrib.submittedAt,
+        understandingScore: contrib.understandingScore,
+        contributions: (contrib.contributions || []).map((c: any) => ({
+          participant: {
+            _id: (c.participantId?._id || c.participantId).toString(),
+            fullName: c.participantId?.fullName || null,
+          },
+          contributionPercentage: c.contributionPercentage,
+        })),
+      };
+    });
+
+    // Task Planning
+    submissions.task_planning = {};
+    (meeting.taskPlannings as any[]).forEach((task: any) => {
+      const participantId = (task.participantId?._id || task.participantId).toString();
+      submissions.task_planning[participantId] = {
+        participant: {
+          _id: participantId,
+          fullName: task.participantId?.fullName || null,
+          email: task.participantId?.email || null,
+        },
+        submitted: true,
+        submittedAt: task.submittedAt,
+        taskDescription: task.taskDescription,
+        deadline: task.deadline,
+        expectedContributionPercentage: task.expectedContributionPercentage,
+      };
+    });
+
+    return {
+      meetingId: id,
+      submissions,
+    };
+  }
+
   async getVotingInfo(id: string, userId: string) {
     const meeting = await this.findOneInternal(id, userId);
 
@@ -405,10 +590,20 @@ export class MeetingsService {
         };
     }
 
+    // Get active participants (currently in the meeting room)
+    const activeParticipants = (meeting.activeParticipants as any[]).map((ap: any) => ({
+      _id: (ap.participantId?._id || ap.participantId).toString(),
+      fullName: ap.participantId?.fullName || null,
+      email: ap.participantId?.email || null,
+      joinedAt: ap.joinedAt,
+      lastSeen: ap.lastSeen,
+    }));
+
     return {
       meetingId: id,
       currentPhase: meeting.currentPhase,
       participants: participantList,
+      activeParticipants,
       submissionStatus,
     };
   }

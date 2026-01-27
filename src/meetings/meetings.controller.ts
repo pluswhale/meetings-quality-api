@@ -132,6 +132,33 @@ export class MeetingsController {
     return this.meetingsService.changePhase(id, changePhaseDto, user.userId);
   }
 
+  @Post(':id/join')
+  @ApiOperation({ summary: 'Присоединиться к встрече (войти в комнату)' })
+  @ApiParam({ name: 'id', description: 'ID встречи' })
+  @ApiResponse({
+    status: 200,
+    description: 'Участник присоединился к встрече',
+    type: MeetingResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Не авторизован' })
+  @ApiResponse({ status: 403, description: 'Только участники могут присоединиться к встрече' })
+  joinMeeting(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.meetingsService.joinMeeting(id, user.userId);
+  }
+
+  @Post(':id/leave')
+  @ApiOperation({ summary: 'Покинуть встречу (выйти из комнаты)' })
+  @ApiParam({ name: 'id', description: 'ID встречи' })
+  @ApiResponse({
+    status: 200,
+    description: 'Участник покинул встречу',
+    type: MeetingResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Не авторизован' })
+  leaveMeeting(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.meetingsService.leaveMeeting(id, user.userId);
+  }
+
   @Post(':id/emotional-evaluations')
   @ApiOperation({ summary: 'Отправить эмоциональную оценку (фаза emotional_evaluation, только участники)' })
   @ApiParam({ name: 'id', description: 'ID встречи' })
@@ -200,6 +227,31 @@ export class MeetingsController {
   @ApiResponse({ status: 403, description: 'Только создатель может просматривать информацию о голосовании' })
   getVotingInfo(@Param('id') id: string, @CurrentUser() user: any) {
     return this.meetingsService.getVotingInfo(id, user.userId);
+  }
+
+  @Get(':id/active-participants')
+  @ApiOperation({ summary: 'Получить список активных участников в комнате встречи' })
+  @ApiParam({ name: 'id', description: 'ID встречи' })
+  @ApiResponse({
+    status: 200,
+    description: 'Список активных участников',
+  })
+  @ApiResponse({ status: 401, description: 'Не авторизован' })
+  getActiveParticipants(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.meetingsService.getActiveParticipants(id, user.userId);
+  }
+
+  @Get(':id/all-submissions')
+  @ApiOperation({ summary: 'Получить все ответы участников в упрощенном формате (только создатель)' })
+  @ApiParam({ name: 'id', description: 'ID встречи' })
+  @ApiResponse({
+    status: 200,
+    description: 'Все ответы участников по всем фазам в упрощенном формате',
+  })
+  @ApiResponse({ status: 401, description: 'Не авторизован' })
+  @ApiResponse({ status: 403, description: 'Только создатель может просматривать все ответы' })
+  getAllSubmissions(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.meetingsService.getAllSubmissions(id, user.userId);
   }
 
   @Get(':id/phase-submissions')
