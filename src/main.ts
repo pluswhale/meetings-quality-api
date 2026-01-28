@@ -26,6 +26,7 @@ async function bootstrap() {
       'http://209.38.214.211',
       'http://localhost:3000',
       'https://pluswhale.github.io',
+      'http://192.168.0.100:3000',
       'https://pluswhale.github.io/meetings-quality',
     ],
     credentials: true,

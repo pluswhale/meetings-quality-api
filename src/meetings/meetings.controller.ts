@@ -24,6 +24,7 @@ import { ChangePhaseDto } from './dto/change-phase.dto';
 import { SubmitEmotionalEvaluationDto } from './dto/submit-emotional-evaluation.dto';
 import { SubmitUnderstandingContributionDto } from './dto/submit-understanding-contribution.dto';
 import { SubmitTaskPlanningDto } from './dto/submit-task-planning.dto';
+import { SubmitTaskEvaluationDto } from './dto/submit-task-evaluation.dto';
 import { MeetingResponseDto, StatisticsResponseDto } from './dto/meeting-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -214,6 +215,38 @@ export class MeetingsController {
     @CurrentUser() user: any,
   ) {
     return this.meetingsService.submitTaskPlanning(id, taskDto, user.userId);
+  }
+
+  @Post(':id/task-evaluations')
+  @ApiOperation({ summary: 'Отправить оценки важности задач (фаза task_evaluation, все участники включая создателя)' })
+  @ApiParam({ name: 'id', description: 'ID встречи' })
+  @ApiResponse({
+    status: 201,
+    description: 'Оценки задач отправлены',
+    type: MeetingResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Встреча не в фазе task_evaluation или оценки уже отправлены' })
+  @ApiResponse({ status: 401, description: 'Не авторизован' })
+  @ApiResponse({ status: 403, description: 'Только участники и создатель могут отправлять оценки' })
+  submitTaskEvaluation(
+    @Param('id') id: string,
+    @Body() evaluationDto: SubmitTaskEvaluationDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.meetingsService.submitTaskEvaluation(id, evaluationDto, user.userId);
+  }
+
+  @Get(':id/task-evaluation-analytics')
+  @ApiOperation({ summary: 'Получить аналитику оценок задач (только создатель)' })
+  @ApiParam({ name: 'id', description: 'ID встречи' })
+  @ApiResponse({
+    status: 200,
+    description: 'Аналитика оценок задач с агрегированными данными',
+  })
+  @ApiResponse({ status: 401, description: 'Не авторизован' })
+  @ApiResponse({ status: 403, description: 'Только создатель может просматривать аналитику' })
+  getTaskEvaluationAnalytics(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.meetingsService.getTaskEvaluationAnalytics(id, user.userId);
   }
 
   @Get(':id/voting-info')

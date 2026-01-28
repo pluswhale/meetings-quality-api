@@ -2,10 +2,10 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
 export enum MeetingPhase {
-  DISCUSSION = 'discussion',
   EMOTIONAL_EVALUATION = 'emotional_evaluation',
   UNDERSTANDING_CONTRIBUTION = 'understanding_contribution',
   TASK_PLANNING = 'task_planning',
+  TASK_EVALUATION = 'task_evaluation',
   FINISHED = 'finished',
 }
 
@@ -28,7 +28,9 @@ export class ParticipantEmotionalEvaluation {
   isToxic: boolean;
 }
 
-export const ParticipantEmotionalEvaluationSchema = SchemaFactory.createForClass(ParticipantEmotionalEvaluation);
+export const ParticipantEmotionalEvaluationSchema = SchemaFactory.createForClass(
+  ParticipantEmotionalEvaluation,
+);
 
 @Schema({ _id: false })
 export class EmotionalEvaluation {
@@ -71,7 +73,8 @@ export class UnderstandingContribution {
   submittedAt: Date;
 }
 
-export const UnderstandingContributionSchema = SchemaFactory.createForClass(UnderstandingContribution);
+export const UnderstandingContributionSchema =
+  SchemaFactory.createForClass(UnderstandingContribution);
 
 // Phase 4: Task Planning - Task with deadline and expected contribution
 @Schema({ _id: false })
@@ -81,6 +84,9 @@ export class TaskPlanning {
 
   @Prop({ required: true })
   taskDescription: string;
+
+  @Prop({ required: true })
+  commonQuestion: string;
 
   @Prop({ required: true })
   deadline: Date;
@@ -93,6 +99,33 @@ export class TaskPlanning {
 }
 
 export const TaskPlanningSchema = SchemaFactory.createForClass(TaskPlanning);
+
+// Phase 5: Task Evaluation - Individual task importance evaluation
+@Schema({ _id: false })
+export class TaskImportanceEvaluation {
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  taskAuthorId: Types.ObjectId;
+
+  @Prop({ required: true, min: 0, max: 100 })
+  importanceScore: number;
+}
+
+export const TaskImportanceEvaluationSchema =
+  SchemaFactory.createForClass(TaskImportanceEvaluation);
+
+@Schema({ _id: false })
+export class TaskEvaluation {
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  participantId: Types.ObjectId;
+
+  @Prop({ type: [TaskImportanceEvaluationSchema], default: [] })
+  evaluations: TaskImportanceEvaluation[];
+
+  @Prop({ default: Date.now })
+  submittedAt: Date;
+}
+
+export const TaskEvaluationSchema = SchemaFactory.createForClass(TaskEvaluation);
 
 // Active Participant tracking with timestamps
 @Schema({ _id: false })
@@ -128,17 +161,17 @@ export class Meeting {
   @Prop({ type: [ActiveParticipantSchema], default: [] })
   activeParticipants: ActiveParticipant[];
 
-  @Prop({ 
-    type: String, 
-    enum: Object.values(MeetingPhase), 
-    default: MeetingPhase.DISCUSSION 
+  @Prop({
+    type: String,
+    enum: Object.values(MeetingPhase),
+    default: MeetingPhase.EMOTIONAL_EVALUATION,
   })
   currentPhase: MeetingPhase;
 
-  @Prop({ 
-    type: String, 
-    enum: Object.values(MeetingStatus), 
-    default: MeetingStatus.UPCOMING 
+  @Prop({
+    type: String,
+    enum: Object.values(MeetingStatus),
+    default: MeetingStatus.UPCOMING,
   })
   status: MeetingStatus;
 
@@ -150,6 +183,9 @@ export class Meeting {
 
   @Prop({ type: [TaskPlanningSchema], default: [] })
   taskPlannings: TaskPlanning[];
+
+  @Prop({ type: [TaskEvaluationSchema], default: [] })
+  taskEvaluations: TaskEvaluation[];
 
   @Prop({ default: Date.now })
   createdAt: Date;

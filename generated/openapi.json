@@ -676,6 +676,98 @@
         ]
       }
     },
+    "/meetings/{id}/task-evaluations": {
+      "post": {
+        "operationId": "MeetingsController_submitTaskEvaluation",
+        "summary": "Отправить оценки важности задач (фаза task_evaluation, все участники включая создателя)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitTaskEvaluationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Оценки задач отправлены",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeetingResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Встреча не в фазе task_evaluation или оценки уже отправлены"
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Только участники и создатель могут отправлять оценки"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/meetings/{id}/task-evaluation-analytics": {
+      "get": {
+        "operationId": "MeetingsController_getTaskEvaluationAnalytics",
+        "summary": "Получить аналитику оценок задач (только создатель)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Аналитика оценок задач с агрегированными данными"
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Только создатель может просматривать аналитику"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
     "/meetings/{id}/voting-info": {
       "get": {
         "operationId": "MeetingsController_getVotingInfo",
@@ -1401,6 +1493,11 @@
             "example": "Implement authentication",
             "description": "Описание задачи"
           },
+          "commonQuestion": {
+            "type": "string",
+            "example": "How should we implement this?",
+            "description": "Общий вопрос задачи"
+          },
           "deadline": {
             "format": "date-time",
             "type": "string",
@@ -1424,8 +1521,58 @@
         "required": [
           "participantId",
           "taskDescription",
+          "commonQuestion",
           "deadline",
           "expectedContributionPercentage",
+          "submittedAt"
+        ]
+      },
+      "TaskImportanceEvaluationItemDto": {
+        "type": "object",
+        "properties": {
+          "taskAuthorId": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439011",
+            "description": "ID автора задачи"
+          },
+          "importanceScore": {
+            "type": "number",
+            "example": 75,
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Оценка важности задачи"
+          }
+        },
+        "required": [
+          "taskAuthorId",
+          "importanceScore"
+        ]
+      },
+      "TaskEvaluationDto": {
+        "type": "object",
+        "properties": {
+          "participantId": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439011",
+            "description": "ID участника, отправившего оценки"
+          },
+          "evaluations": {
+            "description": "Массив оценок важности задач",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskImportanceEvaluationItemDto"
+            }
+          },
+          "submittedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-01-24T12:00:00.000Z",
+            "description": "Дата отправки"
+          }
+        },
+        "required": [
+          "participantId",
+          "evaluations",
           "submittedAt"
         ]
       },
@@ -1473,13 +1620,13 @@
           "currentPhase": {
             "type": "string",
             "enum": [
-              "discussion",
               "emotional_evaluation",
               "understanding_contribution",
               "task_planning",
+              "task_evaluation",
               "finished"
             ],
-            "example": "discussion"
+            "example": "emotional_evaluation"
           },
           "status": {
             "type": "string",
@@ -1511,6 +1658,13 @@
               "$ref": "#/components/schemas/TaskPlanningDto"
             }
           },
+          "taskEvaluations": {
+            "description": "Оценки важности задач участниками",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskEvaluationDto"
+            }
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -1534,6 +1688,7 @@
           "emotionalEvaluations",
           "understandingContributions",
           "taskPlannings",
+          "taskEvaluations",
           "createdAt",
           "updatedAt"
         ]
@@ -1570,10 +1725,10 @@
             "type": "string",
             "description": "Новая фаза встречи",
             "enum": [
-              "discussion",
               "emotional_evaluation",
               "understanding_contribution",
               "task_planning",
+              "task_evaluation",
               "finished"
             ],
             "example": "emotional_evaluation"
@@ -1677,6 +1832,11 @@
             "description": "Описание задачи",
             "example": "Реализовать аутентификацию пользователей"
           },
+          "commonQuestion": {
+            "type": "string",
+            "description": "Общий вопрос задачи",
+            "example": "Какие технологии использовать?"
+          },
           "deadline": {
             "type": "string",
             "description": "Дедлайн задачи (ISO формат)",
@@ -1692,8 +1852,55 @@
         },
         "required": [
           "taskDescription",
+          "commonQuestion",
           "deadline",
           "expectedContributionPercentage"
+        ]
+      },
+      "TaskImportanceEvaluationDto": {
+        "type": "object",
+        "properties": {
+          "taskAuthorId": {
+            "type": "string",
+            "description": "ID автора задачи, которую оценивают",
+            "example": "507f1f77bcf86cd799439011"
+          },
+          "importanceScore": {
+            "type": "number",
+            "description": "Оценка важности задачи (0-100)",
+            "example": 75,
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "taskAuthorId",
+          "importanceScore"
+        ]
+      },
+      "SubmitTaskEvaluationDto": {
+        "type": "object",
+        "properties": {
+          "evaluations": {
+            "description": "Массив оценок важности задач",
+            "example": [
+              {
+                "taskAuthorId": "507f1f77bcf86cd799439011",
+                "importanceScore": 85
+              },
+              {
+                "taskAuthorId": "507f1f77bcf86cd799439012",
+                "importanceScore": 60
+              }
+            ],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskImportanceEvaluationDto"
+            }
+          }
+        },
+        "required": [
+          "evaluations"
         ]
       },
       "StatisticsResponseDto": {
@@ -1753,6 +1960,11 @@
             "description": "Описание задачи",
             "example": "Реализовать аутентификацию пользователей"
           },
+          "commonQuestion": {
+            "type": "string",
+            "description": "Описание общего вопроса",
+            "example": "Как я понимаю общий вопрос "
+          },
           "meetingId": {
             "type": "string",
             "description": "ID встречи, из которой создана задача",
@@ -1773,6 +1985,7 @@
         },
         "required": [
           "description",
+          "commonQuestion",
           "meetingId",
           "deadline",
           "contributionImportance"

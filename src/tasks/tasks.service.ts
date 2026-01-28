@@ -1,6 +1,6 @@
-import { 
-  Injectable, 
-  NotFoundException, 
+import {
+  Injectable,
+  NotFoundException,
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
@@ -12,9 +12,7 @@ import { UpdateTaskDto } from './dto/update-task.dto';
 
 @Injectable()
 export class TasksService {
-  constructor(
-    @InjectModel(Task.name) private taskModel: Model<TaskDocument>,
-  ) {}
+  constructor(@InjectModel(Task.name) private taskModel: Model<TaskDocument>) {}
 
   async create(createTaskDto: CreateTaskDto, userId: string): Promise<Task> {
     if (!Types.ObjectId.isValid(createTaskDto.meetingId)) {
@@ -27,6 +25,7 @@ export class TasksService {
       meetingId: new Types.ObjectId(createTaskDto.meetingId),
       deadline: new Date(createTaskDto.deadline),
       contributionImportance: createTaskDto.contributionImportance,
+      commonQuestion: createTaskDto.commonQuestion,
     });
 
     return createdTask.save();
@@ -34,7 +33,7 @@ export class TasksService {
 
   async findAll(userId: string, filter?: 'current' | 'past'): Promise<Task[]> {
     const userObjectId = new Types.ObjectId(userId);
-    
+
     const query: any = {
       authorId: userObjectId,
     };

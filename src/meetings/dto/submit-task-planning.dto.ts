@@ -18,6 +18,14 @@ export class SubmitTaskPlanningDto {
   taskDescription: string;
 
   @ApiProperty({
+    description: 'Общий вопрос задачи',
+    example: 'Какие технологии использовать?',
+  })
+  @IsNotEmpty()
+  @IsString()
+  commonQuestion: string;
+
+  @ApiProperty({
     description: 'Дедлайн задачи (ISO формат)',
     example: '2026-02-01T00:00:00.000Z',
   })

@@ -1,12 +1,4 @@
-import { 
-  IsNotEmpty, 
-  IsString, 
-  IsNumber, 
-  IsDateString,
-  IsMongoId,
-  Min, 
-  Max,
-} from 'class-validator';
+import { IsNotEmpty, IsString, IsNumber, IsDateString, IsMongoId, Min, Max } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateTaskDto {
@@ -17,6 +9,14 @@ export class CreateTaskDto {
   @IsNotEmpty()
   @IsString()
   description: string;
+
+  @ApiProperty({
+    description: 'Описание общего вопроса',
+    example: 'Как я понимаю общий вопрос ',
+  })
+  @IsNotEmpty()
+  @IsString()
+  commonQuestion: string;
 
   @ApiProperty({
     description: 'ID встречи, из которой создана задача',

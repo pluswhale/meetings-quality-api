@@ -2,121 +2,163 @@ import { ApiProperty } from '@nestjs/swagger';
 import { MeetingPhase, MeetingStatus } from '../schemas/meeting.schema';
 
 class EmotionalEvaluationItemDto {
-  @ApiProperty({ 
+  @ApiProperty({
     example: '507f1f77bcf86cd799439012',
-    description: 'ID участника, которого оценивают'
+    description: 'ID участника, которого оценивают',
   })
   targetParticipantId: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: 85,
     minimum: -100,
     maximum: 100,
-    description: 'Эмоциональная оценка'
+    description: 'Эмоциональная оценка',
   })
   emotionalScale: number;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: false,
-    description: 'Флаг токсичности'
+    description: 'Флаг токсичности',
   })
   isToxic: boolean;
 }
 
 class EmotionalEvaluationDto {
-  @ApiProperty({ 
+  @ApiProperty({
     example: '507f1f77bcf86cd799439011',
-    description: 'ID участника, который оценивал'
+    description: 'ID участника, который оценивал',
   })
   participantId: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     type: [EmotionalEvaluationItemDto],
-    description: 'Оценки других участников'
+    description: 'Оценки других участников',
   })
   evaluations: EmotionalEvaluationItemDto[];
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: '2026-01-24T10:30:00.000Z',
-    description: 'Дата отправки'
+    description: 'Дата отправки',
   })
   submittedAt: Date;
 }
 
 class ContributionItemDto {
-  @ApiProperty({ 
+  @ApiProperty({
     example: '507f1f77bcf86cd799439012',
-    description: 'ID участника'
+    description: 'ID участника',
   })
   participantId: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: 60,
     minimum: 0,
     maximum: 100,
-    description: 'Процент вклада'
+    description: 'Процент вклада',
   })
   contributionPercentage: number;
 }
 
 class UnderstandingContributionDto {
-  @ApiProperty({ 
+  @ApiProperty({
     example: '507f1f77bcf86cd799439011',
-    description: 'ID участника'
+    description: 'ID участника',
   })
   participantId: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: 90,
     minimum: 0,
     maximum: 100,
-    description: 'Оценка понимания'
+    description: 'Оценка понимания',
   })
   understandingScore: number;
 
-  @ApiProperty({ 
+  @ApiProperty({
     type: [ContributionItemDto],
-    description: 'Распределение вклада'
+    description: 'Распределение вклада',
   })
   contributions: ContributionItemDto[];
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: '2026-01-24T11:00:00.000Z',
-    description: 'Дата отправки'
+    description: 'Дата отправки',
   })
   submittedAt: Date;
 }
 
 class TaskPlanningDto {
-  @ApiProperty({ 
+  @ApiProperty({
     example: '507f1f77bcf86cd799439011',
-    description: 'ID участника'
+    description: 'ID участника',
   })
   participantId: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: 'Implement authentication',
-    description: 'Описание задачи'
+    description: 'Описание задачи',
   })
   taskDescription: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
+    example: 'How should we implement this?',
+    description: 'Общий вопрос задачи',
+  })
+  commonQuestion: string;
+
+  @ApiProperty({
     example: '2026-02-01T00:00:00.000Z',
-    description: 'Дедлайн'
+    description: 'Дедлайн',
   })
   deadline: Date;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: 80,
     minimum: 0,
     maximum: 100,
-    description: 'Ожидаемый процент вклада'
+    description: 'Ожидаемый процент вклада',
   })
   expectedContributionPercentage: number;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: '2026-01-24T11:30:00.000Z',
-    description: 'Дата отправки'
+    description: 'Дата отправки',
+  })
+  submittedAt: Date;
+}
+
+class TaskImportanceEvaluationItemDto {
+  @ApiProperty({
+    example: '507f1f77bcf86cd799439011',
+    description: 'ID автора задачи',
+  })
+  taskAuthorId: string;
+
+  @ApiProperty({
+    example: 75,
+    minimum: 0,
+    maximum: 100,
+    description: 'Оценка важности задачи',
+  })
+  importanceScore: number;
+}
+
+class TaskEvaluationDto {
+  @ApiProperty({
+    example: '507f1f77bcf86cd799439011',
+    description: 'ID участника, отправившего оценки',
+  })
+  participantId: string;
+
+  @ApiProperty({
+    type: [TaskImportanceEvaluationItemDto],
+    description: 'Массив оценок важности задач',
+  })
+  evaluations: TaskImportanceEvaluationItemDto[];
+
+  @ApiProperty({
+    example: '2026-01-24T12:00:00.000Z',
+    description: 'Дата отправки',
   })
   submittedAt: Date;
 }
@@ -131,49 +173,55 @@ export class MeetingResponseDto {
   @ApiProperty({ example: 'Какие технологии использовать?' })
   question: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: '507f1f77bcf86cd799439011',
-    description: 'ID создателя встречи (строка)' 
+    description: 'ID создателя встречи (строка)',
   })
   creatorId: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: ['507f1f77bcf86cd799439011', '507f1f77bcf86cd799439012'],
     type: [String],
-    description: 'Массив ID участников (строки)'
+    description: 'Массив ID участников (строки)',
   })
   participantIds: string[];
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: ['507f1f77bcf86cd799439011'],
     type: [String],
-    description: 'Массив ID активных участников, которые сейчас в комнате встречи'
+    description: 'Массив ID активных участников, которые сейчас в комнате встречи',
   })
   activeParticipantIds: string[];
 
-  @ApiProperty({ enum: MeetingPhase, example: MeetingPhase.DISCUSSION })
+  @ApiProperty({ enum: MeetingPhase, example: MeetingPhase.EMOTIONAL_EVALUATION })
   currentPhase: MeetingPhase;
 
   @ApiProperty({ enum: MeetingStatus, example: MeetingStatus.UPCOMING })
   status: MeetingStatus;
 
-  @ApiProperty({ 
+  @ApiProperty({
     type: [EmotionalEvaluationDto],
-    description: 'Эмоциональные оценки участников'
+    description: 'Эмоциональные оценки участников',
   })
   emotionalEvaluations: EmotionalEvaluationDto[];
 
-  @ApiProperty({ 
+  @ApiProperty({
     type: [UnderstandingContributionDto],
-    description: 'Понимание и вклад участников'
+    description: 'Понимание и вклад участников',
   })
   understandingContributions: UnderstandingContributionDto[];
 
-  @ApiProperty({ 
+  @ApiProperty({
     type: [TaskPlanningDto],
-    description: 'Планирование задач участников'
+    description: 'Планирование задач участников',
   })
   taskPlannings: TaskPlanningDto[];
+
+  @ApiProperty({
+    type: [TaskEvaluationDto],
+    description: 'Оценки важности задач участниками',
+  })
+  taskEvaluations: TaskEvaluationDto[];
 
   @ApiProperty({ example: '2026-01-19T10:00:00.000Z' })
   createdAt: Date;

@@ -8,6 +8,9 @@ export class Task {
   @Prop({ required: true })
   description: string;
 
+  @Prop({ required: true })
+  commonQuestion: string;
+
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   authorId: Types.ObjectId;
 
