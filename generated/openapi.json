@@ -428,7 +428,9 @@
     "/meetings/{id}/join": {
       "post": {
         "operationId": "MeetingsController_joinMeeting",
-        "summary": "Присоединиться к встрече (войти в комнату)",
+        "summary": "[DEPRECATED] Присоединиться к встрече (войти в комнату)",
+        "deprecated": true,
+        "description": "\n      ⚠️ DEPRECATED: Используйте WebSocket event 'join_meeting' вместо этого REST endpoint.\n      \n      Этот endpoint оставлен для обратной совместимости, но не обеспечивает \n      надежное отслеживание присутствия в реальном времени.\n      \n      Для корректной работы голосования используйте Socket.IO:\n      socket.emit('join_meeting', { meetingId })\n    ",
         "parameters": [
           {
             "name": "id",
@@ -442,7 +444,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Участник присоединился к встрече",
+            "description": "Участник присоединился к встрече (устаревший метод)",
             "content": {
               "application/json": {
                 "schema": {
@@ -471,7 +473,9 @@
     "/meetings/{id}/leave": {
       "post": {
         "operationId": "MeetingsController_leaveMeeting",
-        "summary": "Покинуть встречу (выйти из комнаты)",
+        "summary": "[DEPRECATED] Покинуть встречу (выйти из комнаты)",
+        "deprecated": true,
+        "description": "\n      ⚠️ DEPRECATED: Используйте WebSocket event 'leave_meeting' вместо этого REST endpoint.\n      \n      Для корректной работы голосования используйте Socket.IO:\n      socket.emit('leave_meeting', { meetingId })\n    ",
         "parameters": [
           {
             "name": "id",
@@ -485,7 +489,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Участник покинул встречу",
+            "description": "Участник покинул встречу (устаревший метод)",
             "content": {
               "application/json": {
                 "schema": {
@@ -511,7 +515,7 @@
     "/meetings/{id}/emotional-evaluations": {
       "post": {
         "operationId": "MeetingsController_submitEmotionalEvaluation",
-        "summary": "Отправить эмоциональную оценку (фаза emotional_evaluation, только участники)",
+        "summary": "Отправить эмоциональную оценку (фаза emotional_evaluation, все участники включая создателя)",
         "parameters": [
           {
             "name": "id",
@@ -549,9 +553,6 @@
           },
           "401": {
             "description": "Не авторизован"
-          },
-          "403": {
-            "description": "Создатель встречи не может отправлять оценки"
           }
         },
         "tags": [
@@ -567,7 +568,7 @@
     "/meetings/{id}/understanding-contributions": {
       "post": {
         "operationId": "MeetingsController_submitUnderstandingContribution",
-        "summary": "Отправить понимание и вклад (фаза understanding_contribution, только участники)",
+        "summary": "Отправить понимание и вклад (фаза understanding_contribution, все участники включая создателя)",
         "parameters": [
           {
             "name": "id",
@@ -605,9 +606,6 @@
           },
           "401": {
             "description": "Не авторизован"
-          },
-          "403": {
-            "description": "Создатель встречи не может отправлять оценки"
           }
         },
         "tags": [
@@ -623,7 +621,7 @@
     "/meetings/{id}/task-plannings": {
       "post": {
         "operationId": "MeetingsController_submitTaskPlanning",
-        "summary": "Отправить планирование задачи (фаза task_planning, только участники)",
+        "summary": "Отправить планирование задачи (фаза task_planning, все участники включая создателя)",
         "parameters": [
           {
             "name": "id",
@@ -661,9 +659,6 @@
           },
           "401": {
             "description": "Не авторизован"
-          },
-          "403": {
-            "description": "Создатель встречи не может отправлять задачи"
           }
         },
         "tags": [
@@ -771,7 +766,8 @@
     "/meetings/{id}/voting-info": {
       "get": {
         "operationId": "MeetingsController_getVotingInfo",
-        "summary": "Получить информацию о голосовании (только создатель)",
+        "summary": "Получить информацию о голосовании с активными участниками (только создатель)",
+        "description": "\n      Возвращает список участников голосования и статус отправки.\n      \n      ВАЖНО: Участниками голосования являются только те пользователи, которые:\n      - Вызвали endpoint /meetings/:id/join (присоединились к встрече)\n      - НЕ вызвали endpoint /meetings/:id/leave (не покинули встречу)\n      \n      Создатель встречи включается в список участников ТОЛЬКО если он присоединился к встрече.\n      Нет специальной логики для создателя - он обрабатывается как обычный участник.\n    ",
         "parameters": [
           {
             "name": "id",
@@ -785,7 +781,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Информация о голосовании"
+            "description": "\n      Информация о голосовании с участниками на основе join/leave.\n      \n      Структура ответа:\n      - votingParticipants: массив пользователей, активно присоединившихся к встрече\n      - totalVotingParticipants: количество активных участников\n      - submissionStatus: кто уже отправил голос в текущей фазе\n      - votingProgress: прогресс голосования (отправлено/всего)\n    "
           },
           "401": {
             "description": "Не авторизован"
@@ -807,7 +803,8 @@
     "/meetings/{id}/active-participants": {
       "get": {
         "operationId": "MeetingsController_getActiveParticipants",
-        "summary": "Получить список активных участников в комнате встречи",
+        "summary": "Получить список активных участников в комнате встречи (Socket.IO-based)",
+        "description": "\n      Возвращает список участников, которые активно подключены через WebSocket.\n      \n      ВАЖНО: Этот endpoint возвращает данные из Socket.IO в реальном времени.\n      Участники отслеживаются через WebSocket соединения:\n      - Добавляются при emit('join_meeting')\n      - Удаляются при emit('leave_meeting') или disconnect\n      \n      Используйте для:\n      - Начальной загрузки списка участников\n      - Проверки статуса подключения\n      \n      Для real-time обновлений подключитесь к Socket.IO и слушайте:\n      socket.on('participants_updated', (data) => { ... })\n    ",
         "parameters": [
           {
             "name": "id",
@@ -821,7 +818,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Список активных участников"
+            "description": "Список активных участников на основе WebSocket подключений"
           },
           "401": {
             "description": "Не авторизован"
@@ -940,6 +937,43 @@
           },
           "401": {
             "description": "Не авторизован"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/meetings/{id}/final-stats": {
+      "get": {
+        "operationId": "MeetingsController_getFinalStatistics",
+        "summary": "Получить финальную статистику встречи со всеми данными участников (только создатель)",
+        "description": "\n      Возвращает подробную статистику для каждого участника:\n      - Какие оценки участник поставил и кому\n      - Какие задачи участник создал и свой уровень вклада\n      - Какие участники присвоили уровни вклада задачам\n    ",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID встречи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Подробная финальная статистика по всем участникам"
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Только создатель может просматривать финальную статистику"
           }
         },
         "tags": [
