@@ -241,7 +241,7 @@ export class MeetingsService {
       evaluations: evaluationDto.evaluations.map((evaluation) => ({
         targetParticipantId: new Types.ObjectId(evaluation.targetParticipantId),
         emotionalScale: evaluation.emotionalScale,
-        isToxic: evaluation.isToxic,
+        isToxic: evaluation.isToxic ?? false,
       })),
       submittedAt: new Date(),
     });

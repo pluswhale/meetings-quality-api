@@ -1,12 +1,13 @@
-import { 
-  IsNotEmpty, 
-  IsNumber, 
-  IsArray, 
-  ValidateNested, 
-  Min, 
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsArray,
+  ValidateNested,
+  Min,
   Max,
   IsMongoId,
   IsBoolean,
+  IsOptional,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
@@ -36,7 +37,7 @@ export class ParticipantEmotionalEvaluationDto {
     description: 'Флаг токсичности участника',
     example: false,
   })
-  @IsNotEmpty()
+  @IsOptional()
   @IsBoolean()
   isToxic: boolean;
 }
