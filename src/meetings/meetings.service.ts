@@ -34,8 +34,22 @@ export class MeetingsService {
       return (field._id || field).toString();
     };
 
+    const transformUser = (user: any) => {
+      if (!user) return null;
+
+      if (typeof user === 'object' && user._id) {
+        return {
+          _id: user._id.toString(),
+          fullName: user.fullName,
+          email: user.email,
+        };
+      }
+
+      return { _id: user.toString() };
+    };
+
     const transformEvaluation = (evaluation: any) => ({
-      participantId: transformId(evaluation.participantId),
+      participant: transformUser(evaluation.participantId),
       evaluations: (evaluation.evaluations || []).map((e: any) => ({
         targetParticipantId: transformId(e.targetParticipantId),
         emotionalScale: e.emotionalScale,
@@ -45,7 +59,7 @@ export class MeetingsService {
     });
 
     const transformContribution = (contribution: any) => ({
-      participantId: transformId(contribution.participantId),
+      participant: transformUser(contribution.participantId),
       understandingScore: contribution.understandingScore,
       contributions: (contribution.contributions || []).map((c: any) => ({
         participantId: transformId(c.participantId),
@@ -55,7 +69,7 @@ export class MeetingsService {
     });
 
     const transformTaskPlanning = (task: any) => ({
-      participantId: transformId(task.participantId),
+      participant: transformUser(task.participantId),
       taskDescription: task.taskDescription,
       commonQuestion: task.commonQuestion,
       deadline: task.deadline,
@@ -64,7 +78,7 @@ export class MeetingsService {
     });
 
     const transformTaskEvaluation = (evaluation: any) => ({
-      participantId: transformId(evaluation.participantId),
+      participant: transformUser(evaluation.participantId),
       evaluations: (evaluation.evaluations || []).map((e: any) => ({
         taskAuthorId: transformId(e.taskAuthorId),
         importanceScore: e.importanceScore,
@@ -76,10 +90,10 @@ export class MeetingsService {
       _id: meeting._id.toString(),
       title: meeting.title,
       question: meeting.question,
-      creatorId: transformId(meeting.creatorId),
+      creatorId: transformUser(meeting.creatorId),
       participantIds: (meeting.participantIds || []).map(transformId),
       activeParticipantIds: (meeting.activeParticipants || []).map((ap: any) =>
-        transformId(ap.participantId),
+        transformUser(ap.participantId),
       ),
       currentPhase: meeting.currentPhase,
       status: meeting.status,
@@ -130,6 +144,13 @@ export class MeetingsService {
       .find(query)
       .populate('creatorId', 'fullName email')
       .populate('participantIds', 'fullName email')
+      .populate('emotionalEvaluations.participantId', 'fullName email')
+      .populate('emotionalEvaluations.evaluations.targetParticipantId', 'fullName email')
+      .populate('understandingContributions.participantId', 'fullName email')
+      .populate('understandingContributions.contributions.participantId', 'fullName email')
+      .populate('taskPlannings.participantId', 'fullName email')
+      .populate('taskEvaluations.participantId', 'fullName email')
+      .populate('taskEvaluations.evaluations.taskAuthorId', 'fullName email')
       .sort({ createdAt: -1 })
       .exec();
 
