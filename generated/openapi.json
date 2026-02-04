@@ -986,6 +986,46 @@
         ]
       }
     },
+    "/meetings/{id}/pending-voters": {
+      "get": {
+        "operationId": "MeetingsController_getPendingVoters",
+        "summary": "Get active participants who have not voted yet (socket-synced)",
+        "description": "\n      Returns list of active participants (connected via WebSocket) who haven't submitted\n      their response in the current meeting phase.\n      \n      IMPORTANT: This uses real-time Socket.IO data to determine who's active,\n      then filters out those who have already submitted.\n      \n      Only the meeting creator can view this information.\n    ",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Meeting ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of pending voters with their connection info"
+          },
+          "401": {
+            "description": "Not authorized"
+          },
+          "403": {
+            "description": "Only creator can view pending voters"
+          },
+          "404": {
+            "description": "Meeting not found"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
     "/tasks": {
       "post": {
         "operationId": "TasksController_create",
@@ -1239,6 +1279,55 @@
           },
           "403": {
             "description": "Только автор может удалить задачу"
+          }
+        },
+        "tags": [
+          "tasks"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/tasks/{id}/approve": {
+      "patch": {
+        "operationId": "TasksController_approveTask",
+        "summary": "Approve or unapprove task (creator only)",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "ID задачи",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveTaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Task approval status updated"
+          },
+          "401": {
+            "description": "Не авторизован"
+          },
+          "403": {
+            "description": "Only meeting creator can approve tasks"
+          },
+          "404": {
+            "description": "Task or meeting not found"
           }
         },
         "tags": [
@@ -2108,6 +2197,19 @@
             "example": true
           }
         }
+      },
+      "ApproveTaskDto": {
+        "type": "object",
+        "properties": {
+          "approved": {
+            "type": "boolean",
+            "description": "Approve or unapprove the task",
+            "example": true
+          }
+        },
+        "required": [
+          "approved"
+        ]
       }
     }
   }
