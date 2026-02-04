@@ -21,7 +21,7 @@ export class ParticipantEmotionalEvaluation {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   targetParticipantId: Types.ObjectId;
 
-  @Prop({ required: true, min: -100, max: 100 })
+  @Prop({ required: false, min: -100, max: 100 })
   emotionalScale: number; // -100 (red/negative) to 100 (green/positive)
 
   @Prop({ default: false })
@@ -93,6 +93,9 @@ export class TaskPlanning {
 
   @Prop({ required: true, min: 0, max: 100 })
   expectedContributionPercentage: number;
+
+  @Prop({ default: false })
+  approved: boolean;
 
   @Prop({ default: Date.now })
   submittedAt: Date;

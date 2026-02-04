@@ -1,9 +1,9 @@
-import { 
-  IsNotEmpty, 
-  IsNumber, 
-  IsArray, 
-  ValidateNested, 
-  Min, 
+import {
+  IsNotEmpty,
+  IsNumber,
+  IsArray,
+  ValidateNested,
+  Min,
   Max,
   IsMongoId,
 } from 'class-validator';

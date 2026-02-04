@@ -13,7 +13,7 @@ export class AuthService {
 
   async register(createUserDto: CreateUserDto) {
     const user = await this.usersService.create(createUserDto);
-    
+
     const payload = { email: user.email, sub: user['_id'] };
     const access_token = this.jwtService.sign(payload);
 
@@ -28,10 +28,7 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto) {
-    const user = await this.usersService.validateUser(
-      loginDto.email,
-      loginDto.password,
-    );
+    const user = await this.usersService.validateUser(loginDto.email, loginDto.password);
 
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
@@ -54,7 +51,7 @@ export class AuthService {
     try {
       const payload = this.jwtService.verify(token);
       const user = await this.usersService.findById(payload.sub);
-      
+
       return {
         user: {
           _id: user['_id'],

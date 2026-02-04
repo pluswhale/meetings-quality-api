@@ -157,6 +157,7 @@ export class MeetingsService {
     return meetings.map((m) => this.transformMeetingResponse(m));
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async findOneInternal(id: string, userId: string): Promise<MeetingDocument> {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Invalid meeting ID');
@@ -554,19 +555,35 @@ export class MeetingsService {
       };
     });
 
+    // Fetch actual Task documents to get taskIds
+    const tasks = await this.taskModel
+      .find({ meetingId: new Types.ObjectId(id) })
+      .select('_id authorId approved')
+      .exec();
+
     submissions.task_planning = {};
     (meeting.taskPlannings as any[]).forEach((task: any) => {
       const participantId = (task.participantId?._id || task.participantId).toString();
+
+      // Find corresponding Task document
+      const taskDoc = tasks.find((t) => {
+        const authorId = (t.authorId as any)?._id || t.authorId;
+        const taskParticipantId = task.participantId?._id || task.participantId;
+        return authorId.equals(taskParticipantId);
+      });
+
       submissions.task_planning[participantId] = {
         participant: {
           _id: participantId,
           fullName: task.participantId?.fullName || null,
           email: task.participantId?.email || null,
         },
+        taskId: taskDoc?._id?.toString() || null,
         submitted: true,
         submittedAt: task.submittedAt,
         taskDescription: task.taskDescription,
         commonQuestion: task.commonQuestion,
+        approved: task.approved,
         deadline: task.deadline,
         expectedContributionPercentage: task.expectedContributionPercentage,
       };
@@ -1058,6 +1075,63 @@ export class MeetingsService {
       participantStatistics: participantStats,
       createdAt: meeting.createdAt,
       updatedAt: meeting.updatedAt,
+    };
+  }
+
+  async getPendingVoters(meetingId: string, userId: string) {
+    const meeting = await this.findOneInternal(meetingId, userId);
+
+    const creatorId = meeting.creatorId._id || meeting.creatorId;
+    if (!creatorId.equals(new Types.ObjectId(userId))) {
+      throw new ForbiddenException('Only creator can view pending voters');
+    }
+
+    // 1. Active users from sockets
+    const activeParticipants = this.meetingsGateway.getActiveParticipants(meetingId);
+
+    // 2. Submitted users by phase
+    let submittedIds: string[] = [];
+
+    switch (meeting.currentPhase) {
+      case MeetingPhase.EMOTIONAL_EVALUATION:
+        submittedIds = meeting.emotionalEvaluations.map((e) =>
+          (e.participantId._id || e.participantId).toString(),
+        );
+        break;
+
+      case MeetingPhase.UNDERSTANDING_CONTRIBUTION:
+        submittedIds = meeting.understandingContributions.map((c) =>
+          (c.participantId._id || c.participantId).toString(),
+        );
+        break;
+
+      case MeetingPhase.TASK_PLANNING:
+        submittedIds = meeting.taskPlannings.map((t) =>
+          (t.participantId._id || t.participantId).toString(),
+        );
+        break;
+
+      case MeetingPhase.TASK_EVALUATION:
+        submittedIds = meeting.taskEvaluations.map((e) =>
+          (e.participantId._id || e.participantId).toString(),
+        );
+        break;
+    }
+
+    // 3. Pending = active - submitted
+    const pending = activeParticipants.filter((p) => !submittedIds.includes(p.userId));
+
+    return {
+      meetingId,
+      phase: meeting.currentPhase,
+      pendingCount: pending.length,
+      pendingParticipants: pending.map((p) => ({
+        _id: p.userId,
+        fullName: p.fullName,
+        email: p.email,
+        joinedAt: p.joinedAt,
+        lastSeen: p.lastSeen,
+      })),
     };
   }
 }

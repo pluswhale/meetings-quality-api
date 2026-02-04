@@ -27,7 +27,7 @@ export class ParticipantEmotionalEvaluationDto {
     minimum: -100,
     maximum: 100,
   })
-  @IsNotEmpty()
+  @IsOptional()
   @IsNumber()
   @Min(-100)
   @Max(100)

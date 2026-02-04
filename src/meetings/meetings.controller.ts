@@ -44,10 +44,7 @@ export class MeetingsController {
     type: MeetingResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
-  create(
-    @Body() createMeetingDto: CreateMeetingDto,
-    @CurrentUser() user: any,
-  ) {
+  create(@Body() createMeetingDto: CreateMeetingDto, @CurrentUser() user: any) {
     return this.meetingsService.create(createMeetingDto, user.userId);
   }
 
@@ -65,10 +62,7 @@ export class MeetingsController {
     type: [MeetingResponseDto],
   })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
-  findAll(
-    @CurrentUser() user: any,
-    @Query('filter') filter?: 'current' | 'past',
-  ) {
+  findAll(@CurrentUser() user: any, @Query('filter') filter?: 'current' | 'past') {
     return this.meetingsService.findAll(user.userId, filter);
   }
 
@@ -134,7 +128,7 @@ export class MeetingsController {
   }
 
   @Post(':id/join')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '[DEPRECATED] Присоединиться к встрече (войти в комнату)',
     deprecated: true,
     description: `
@@ -145,7 +139,7 @@ export class MeetingsController {
       
       Для корректной работы голосования используйте Socket.IO:
       socket.emit('join_meeting', { meetingId })
-    `
+    `,
   })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
@@ -160,7 +154,7 @@ export class MeetingsController {
   }
 
   @Post(':id/leave')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: '[DEPRECATED] Покинуть встречу (выйти из комнаты)',
     deprecated: true,
     description: `
@@ -168,7 +162,7 @@ export class MeetingsController {
       
       Для корректной работы голосования используйте Socket.IO:
       socket.emit('leave_meeting', { meetingId })
-    `
+    `,
   })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
@@ -182,7 +176,10 @@ export class MeetingsController {
   }
 
   @Post(':id/emotional-evaluations')
-  @ApiOperation({ summary: 'Отправить эмоциональную оценку (фаза emotional_evaluation, все участники включая создателя)' })
+  @ApiOperation({
+    summary:
+      'Отправить эмоциональную оценку (фаза emotional_evaluation, все участники включая создателя)',
+  })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
     status: 201,
@@ -200,7 +197,10 @@ export class MeetingsController {
   }
 
   @Post(':id/understanding-contributions')
-  @ApiOperation({ summary: 'Отправить понимание и вклад (фаза understanding_contribution, все участники включая создателя)' })
+  @ApiOperation({
+    summary:
+      'Отправить понимание и вклад (фаза understanding_contribution, все участники включая создателя)',
+  })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
     status: 201,
@@ -218,7 +218,9 @@ export class MeetingsController {
   }
 
   @Post(':id/task-plannings')
-  @ApiOperation({ summary: 'Отправить планирование задачи (фаза task_planning, все участники включая создателя)' })
+  @ApiOperation({
+    summary: 'Отправить планирование задачи (фаза task_planning, все участники включая создателя)',
+  })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
     status: 201,
@@ -236,14 +238,20 @@ export class MeetingsController {
   }
 
   @Post(':id/task-evaluations')
-  @ApiOperation({ summary: 'Отправить оценки важности задач (фаза task_evaluation, все участники включая создателя)' })
+  @ApiOperation({
+    summary:
+      'Отправить оценки важности задач (фаза task_evaluation, все участники включая создателя)',
+  })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
     status: 201,
     description: 'Оценки задач отправлены',
     type: MeetingResponseDto,
   })
-  @ApiResponse({ status: 400, description: 'Встреча не в фазе task_evaluation или оценки уже отправлены' })
+  @ApiResponse({
+    status: 400,
+    description: 'Встреча не в фазе task_evaluation или оценки уже отправлены',
+  })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
   @ApiResponse({ status: 403, description: 'Только участники и создатель могут отправлять оценки' })
   submitTaskEvaluation(
@@ -268,7 +276,7 @@ export class MeetingsController {
   }
 
   @Get(':id/voting-info')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Получить информацию о голосовании с активными участниками (только создатель)',
     description: `
       Возвращает список участников голосования и статус отправки.
@@ -279,7 +287,7 @@ export class MeetingsController {
       
       Создатель встречи включается в список участников ТОЛЬКО если он присоединился к встрече.
       Нет специальной логики для создателя - он обрабатывается как обычный участник.
-    `
+    `,
   })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
@@ -295,13 +303,16 @@ export class MeetingsController {
     `,
   })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
-  @ApiResponse({ status: 403, description: 'Только создатель может просматривать информацию о голосовании' })
+  @ApiResponse({
+    status: 403,
+    description: 'Только создатель может просматривать информацию о голосовании',
+  })
   getVotingInfo(@Param('id') id: string, @CurrentUser() user: any) {
     return this.meetingsService.getVotingInfo(id, user.userId);
   }
 
   @Get(':id/active-participants')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Получить список активных участников в комнате встречи (Socket.IO-based)',
     description: `
       Возвращает список участников, которые активно подключены через WebSocket.
@@ -317,7 +328,7 @@ export class MeetingsController {
       
       Для real-time обновлений подключитесь к Socket.IO и слушайте:
       socket.on('participants_updated', (data) => { ... })
-    `
+    `,
   })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
@@ -330,7 +341,9 @@ export class MeetingsController {
   }
 
   @Get(':id/all-submissions')
-  @ApiOperation({ summary: 'Получить все ответы участников в упрощенном формате (только создатель)' })
+  @ApiOperation({
+    summary: 'Получить все ответы участников в упрощенном формате (только создатель)',
+  })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
     status: 200,
@@ -343,14 +356,19 @@ export class MeetingsController {
   }
 
   @Get(':id/phase-submissions')
-  @ApiOperation({ summary: 'Получить детальную информацию о всех ответах участников (только создатель)' })
+  @ApiOperation({
+    summary: 'Получить детальную информацию о всех ответах участников (только создатель)',
+  })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
     status: 200,
     description: 'Детальная информация о всех ответах участников по всем фазам',
   })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
-  @ApiResponse({ status: 403, description: 'Только создатель может просматривать ответы участников' })
+  @ApiResponse({
+    status: 403,
+    description: 'Только создатель может просматривать ответы участников',
+  })
   getPhaseSubmissions(@Param('id') id: string, @CurrentUser() user: any) {
     return this.meetingsService.getPhaseSubmissions(id, user.userId);
   }
@@ -370,14 +388,14 @@ export class MeetingsController {
   }
 
   @Get(':id/final-stats')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Получить финальную статистику встречи со всеми данными участников (только создатель)',
     description: `
       Возвращает подробную статистику для каждого участника:
       - Какие оценки участник поставил и кому
       - Какие задачи участник создал и свой уровень вклада
       - Какие участники присвоили уровни вклада задачам
-    `
+    `,
   })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
@@ -385,8 +403,36 @@ export class MeetingsController {
     description: 'Подробная финальная статистика по всем участникам',
   })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
-  @ApiResponse({ status: 403, description: 'Только создатель может просматривать финальную статистику' })
+  @ApiResponse({
+    status: 403,
+    description: 'Только создатель может просматривать финальную статистику',
+  })
   getFinalStatistics(@Param('id') id: string, @CurrentUser() user: any) {
     return this.meetingsService.getFinalStatistics(id, user.userId);
+  }
+
+  @Get(':id/pending-voters')
+  @ApiOperation({
+    summary: 'Get active participants who have not voted yet (socket-synced)',
+    description: `
+      Returns list of active participants (connected via WebSocket) who haven't submitted
+      their response in the current meeting phase.
+      
+      IMPORTANT: This uses real-time Socket.IO data to determine who's active,
+      then filters out those who have already submitted.
+      
+      Only the meeting creator can view this information.
+    `,
+  })
+  @ApiParam({ name: 'id', description: 'Meeting ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'List of pending voters with their connection info',
+  })
+  @ApiResponse({ status: 401, description: 'Not authorized' })
+  @ApiResponse({ status: 403, description: 'Only creator can view pending voters' })
+  @ApiResponse({ status: 404, description: 'Meeting not found' })
+  getPendingVoters(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.meetingsService.getPendingVoters(id, user.userId);
   }
 }

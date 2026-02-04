@@ -7,21 +7,19 @@ import { CreateUserDto } from './dto/create-user.dto';
 
 @Injectable()
 export class UsersService {
-  constructor(
-    @InjectModel(User.name) private userModel: Model<UserDocument>,
-  ) {}
+  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
 
   async create(createUserDto: CreateUserDto): Promise<User> {
-    const existingUser = await this.userModel.findOne({ 
-      email: createUserDto.email 
+    const existingUser = await this.userModel.findOne({
+      email: createUserDto.email,
     });
-    
+
     if (existingUser) {
       throw new ConflictException('User with this email already exists');
     }
 
     const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
-    
+
     const createdUser = new this.userModel({
       ...createUserDto,
       password: hashedPassword,
@@ -48,7 +46,7 @@ export class UsersService {
 
   async validateUser(email: string, password: string): Promise<User | null> {
     const user = await this.findByEmail(email);
-    if (user && await bcrypt.compare(password, user.password)) {
+    if (user && (await bcrypt.compare(password, user.password))) {
       return user;
     }
     return null;
