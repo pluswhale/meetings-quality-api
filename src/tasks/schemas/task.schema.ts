@@ -11,6 +11,9 @@ export class Task {
   @Prop({ required: true })
   commonQuestion: string;
 
+  @Prop({ default: false })
+  approved: boolean;
+
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   authorId: Types.ObjectId;
 

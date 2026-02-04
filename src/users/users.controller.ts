@@ -21,7 +21,7 @@ export class UsersController {
   @ApiResponse({ status: 401, description: 'Не авторизован' })
   async findAll() {
     const users = await this.usersService.findAll();
-    return users.map(user => ({
+    return users.map((user) => ({
       _id: user['_id'],
       fullName: user.fullName,
       email: user.email,

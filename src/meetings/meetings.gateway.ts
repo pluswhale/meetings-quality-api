@@ -231,11 +231,13 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
     });
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   emitParticipantJoined(meetingId: string, userId: string) {
-    // Legacy support
+    // Legacy support - kept for backward compatibility
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   emitParticipantLeft(meetingId: string, userId: string) {
-    // Legacy support
+    // Legacy support - kept for backward compatibility
   }
 }

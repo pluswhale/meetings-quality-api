@@ -23,6 +23,7 @@ import { UpdateTaskDto } from './dto/update-task.dto';
 import { TaskResponseDto } from './dto/task-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { ApproveTaskDto } from './dto/approve-task.dto';
 
 @ApiTags('tasks')
 @Controller('tasks')
@@ -40,10 +41,7 @@ export class TasksController {
   })
   @ApiResponse({ status: 400, description: 'Неверные данные' })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
-  create(
-    @Body() createTaskDto: CreateTaskDto,
-    @CurrentUser() user: any,
-  ) {
+  create(@Body() createTaskDto: CreateTaskDto, @CurrentUser() user: any) {
     return this.tasksService.create(createTaskDto, user.userId);
   }
 
@@ -61,10 +59,7 @@ export class TasksController {
     type: [TaskResponseDto],
   })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
-  findAll(
-    @CurrentUser() user: any,
-    @Query('filter') filter?: 'current' | 'past',
-  ) {
+  findAll(@CurrentUser() user: any, @Query('filter') filter?: 'current' | 'past') {
     return this.tasksService.findAll(user.userId, filter);
   }
 
@@ -78,10 +73,7 @@ export class TasksController {
   })
   @ApiResponse({ status: 400, description: 'Неверный ID встречи' })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
-  findByMeeting(
-    @Param('meetingId') meetingId: string,
-    @CurrentUser() user: any,
-  ) {
+  findByMeeting(@Param('meetingId') meetingId: string, @CurrentUser() user: any) {
     return this.tasksService.findByMeeting(meetingId, user.userId);
   }
 
@@ -110,11 +102,7 @@ export class TasksController {
   })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
   @ApiResponse({ status: 403, description: 'Только автор может обновить задачу' })
-  update(
-    @Param('id') id: string,
-    @Body() updateTaskDto: UpdateTaskDto,
-    @CurrentUser() user: any,
-  ) {
+  update(@Param('id') id: string, @Body() updateTaskDto: UpdateTaskDto, @CurrentUser() user: any) {
     return this.tasksService.update(id, updateTaskDto, user.userId);
   }
 
@@ -126,5 +114,19 @@ export class TasksController {
   @ApiResponse({ status: 403, description: 'Только автор может удалить задачу' })
   remove(@Param('id') id: string, @CurrentUser() user: any) {
     return this.tasksService.remove(id, user.userId);
+  }
+
+  @Patch(':id/approve')
+  @ApiOperation({ summary: 'Approve or unapprove task (creator only)' })
+  @ApiParam({ name: 'id', description: 'ID задачи' })
+  @ApiResponse({
+    status: 200,
+    description: 'Task approval status updated',
+  })
+  @ApiResponse({ status: 401, description: 'Не авторизован' })
+  @ApiResponse({ status: 403, description: 'Only meeting creator can approve tasks' })
+  @ApiResponse({ status: 404, description: 'Task or meeting not found' })
+  approveTask(@Param('id') id: string, @Body() dto: ApproveTaskDto, @CurrentUser() user: any) {
+    return this.tasksService.setApproval(id, dto.approved, user.userId);
   }
 }
