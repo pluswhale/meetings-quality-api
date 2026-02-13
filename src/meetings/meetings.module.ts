@@ -8,9 +8,13 @@ import { Meeting, MeetingSchema } from './schemas/meeting.schema';
 import { Task, TaskSchema } from '../tasks/schemas/task.schema';
 import { AuthModule } from 'src/auth/auth.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { BullModule } from '@nestjs/bullmq';
 
 @Module({
   imports: [
+    BullModule.registerQueue({
+      name: 'meeting-status',
+    }),
     MongooseModule.forFeature([
       { name: Meeting.name, schema: MeetingSchema },
       { name: Task.name, schema: TaskSchema },

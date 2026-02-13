@@ -5,7 +5,6 @@ export enum MeetingPhase {
   EMOTIONAL_EVALUATION = 'emotional_evaluation',
   UNDERSTANDING_CONTRIBUTION = 'understanding_contribution',
   TASK_PLANNING = 'task_planning',
-  TASK_EVALUATION = 'task_evaluation',
   FINISHED = 'finished',
 }
 
@@ -178,6 +177,11 @@ export class Meeting {
   })
   status: MeetingStatus;
 
+  @Prop({
+    default: Date.now,
+  })
+  upcomingDate: Date;
+
   @Prop({ type: [EmotionalEvaluationSchema], default: [] })
   emotionalEvaluations: EmotionalEvaluation[];
 
@@ -197,4 +201,7 @@ export class Meeting {
   updatedAt: Date;
 }
 
-export const MeetingSchema = SchemaFactory.createForClass(Meeting);
+export const MeetingSchema = SchemaFactory.createForClass(Meeting).index({
+  status: 1,
+  upcomingDate: 1,
+});

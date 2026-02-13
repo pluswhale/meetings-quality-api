@@ -1474,6 +1474,11 @@
             "description": "Вопрос для обсуждения",
             "example": "Какие технологии использовать для нового проекта?"
           },
+          "upcomingDate": {
+            "type": "string",
+            "description": "Дата и время встречи",
+            "example": "2026-02-11T00:00:00.000Z"
+          },
           "participantIds": {
             "description": "ID участников встречи",
             "example": [
@@ -1488,7 +1493,8 @@
         },
         "required": [
           "title",
-          "question"
+          "question",
+          "upcomingDate"
         ]
       },
       "EmotionalEvaluationItemDto": {

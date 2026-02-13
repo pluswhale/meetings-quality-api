@@ -53,7 +53,7 @@ export class MeetingsController {
   @ApiQuery({
     name: 'filter',
     required: false,
-    enum: ['current', 'past'],
+    enum: ['current', 'past', 'upcoming'],
     description: 'Фильтр по статусу встречи',
   })
   @ApiResponse({
@@ -62,7 +62,7 @@ export class MeetingsController {
     type: [MeetingResponseDto],
   })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
-  findAll(@CurrentUser() user: any, @Query('filter') filter?: 'current' | 'past') {
+  findAll(@CurrentUser() user: any, @Query('filter') filter?: 'current' | 'past' | 'upcoming') {
     return this.meetingsService.findAll(user.userId, filter);
   }
 

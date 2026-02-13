@@ -75,6 +75,7 @@ export class MeetingsService {
       deadline: task.deadline,
       expectedContributionPercentage: task.expectedContributionPercentage,
       submittedAt: task.submittedAt,
+      approved: task.approved,
     });
 
     const transformTaskEvaluation = (evaluation: any) => ({
@@ -110,13 +111,22 @@ export class MeetingsService {
   }
 
   async create(createMeetingDto: CreateMeetingDto, userId: string): Promise<Meeting> {
+    const now = new Date();
+
     const participantIds =
       createMeetingDto.participantIds?.map((id) => new Types.ObjectId(id)) || [];
+
     const creatorObjectId = new Types.ObjectId(userId);
 
     if (!participantIds.some((id) => id.equals(creatorObjectId))) {
       participantIds.push(creatorObjectId);
     }
+
+    const upcomingDate = createMeetingDto.upcomingDate
+      ? new Date(createMeetingDto.upcomingDate)
+      : now;
+
+    let status: MeetingStatus = upcomingDate > now ? MeetingStatus.UPCOMING : MeetingStatus.ACTIVE;
 
     const createdMeeting = new this.meetingModel({
       title: createMeetingDto.title,
@@ -124,20 +134,23 @@ export class MeetingsService {
       creatorId: creatorObjectId,
       participantIds,
       currentPhase: MeetingPhase.EMOTIONAL_EVALUATION,
-      status: MeetingStatus.UPCOMING,
+      status,
+      upcomingDate,
     });
 
     const saved = await createdMeeting.save();
     return this.transformMeetingResponse(saved);
   }
 
-  async findAll(userId: string, filter?: 'current' | 'past'): Promise<any[]> {
+  async findAll(userId: string, filter?: 'current' | 'past' | 'upcoming'): Promise<any[]> {
     const query: any = {};
 
     if (filter === 'current') {
-      query.status = { $in: [MeetingStatus.UPCOMING, MeetingStatus.ACTIVE] };
+      query.status = { $in: [MeetingStatus.ACTIVE] };
     } else if (filter === 'past') {
       query.status = MeetingStatus.FINISHED;
+    } else if (filter === 'upcoming') {
+      query.status = { $in: [MeetingStatus.UPCOMING] };
     }
 
     const meetings = await this.meetingModel
@@ -670,16 +683,6 @@ export class MeetingsService {
         };
         break;
 
-      case MeetingPhase.TASK_EVALUATION:
-        submissionStatus = {
-          phase: MeetingPhase.TASK_EVALUATION,
-          submitted: (meeting.taskEvaluations as any[]).map((e: any) => {
-            const participantId = e.participantId?._id || e.participantId;
-            return participantId.toString();
-          }),
-        };
-        break;
-
       default:
         submissionStatus = {
           phase: meeting.currentPhase,
@@ -1108,12 +1111,6 @@ export class MeetingsService {
       case MeetingPhase.TASK_PLANNING:
         submittedIds = meeting.taskPlannings.map((t) =>
           (t.participantId._id || t.participantId).toString(),
-        );
-        break;
-
-      case MeetingPhase.TASK_EVALUATION:
-        submittedIds = meeting.taskEvaluations.map((e) =>
-          (e.participantId._id || e.participantId).toString(),
         );
         break;
     }
