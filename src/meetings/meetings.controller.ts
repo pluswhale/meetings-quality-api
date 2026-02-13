@@ -28,13 +28,17 @@ import { SubmitTaskEvaluationDto } from './dto/submit-task-evaluation.dto';
 import { MeetingResponseDto, StatisticsResponseDto } from './dto/meeting-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { MeetingStatusCron } from './workers/meeting-status.cron';
 
 @ApiTags('meetings')
 @Controller('meetings')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth('JWT-auth')
 export class MeetingsController {
-  constructor(private readonly meetingsService: MeetingsService) {}
+  constructor(
+    private readonly meetingsService: MeetingsService,
+    private readonly meetingStatusCron: MeetingStatusCron,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Создать новую встречу' })
@@ -177,16 +181,23 @@ export class MeetingsController {
 
   @Post(':id/emotional-evaluations')
   @ApiOperation({
-    summary:
-      'Отправить эмоциональную оценку (фаза emotional_evaluation, все участники включая создателя)',
+    summary: 'Отправить эмоциональную оценку (все участники включая создателя)',
+    description: `
+      Отправить эмоциональные оценки других участников.
+      
+      ВАЖНО: Голосование полностью опциональное!
+      - Можно отправить пустой массив [] (не голосовать)
+      - Можно отправить оценку только для тех, кого хотите оценить
+      - Можно обновить оценку, отправив новую
+      - Создатель видит все оценки (включая пустые) в /all-submissions
+    `,
   })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
     status: 201,
-    description: 'Эмоциональная оценка отправлена',
+    description: 'Эмоциональная оценка отправлена (может быть пустой)',
     type: MeetingResponseDto,
   })
-  @ApiResponse({ status: 400, description: 'Встреча не в фазе emotional_evaluation' })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
   submitEmotionalEvaluation(
     @Param('id') id: string,
@@ -198,16 +209,24 @@ export class MeetingsController {
 
   @Post(':id/understanding-contributions')
   @ApiOperation({
-    summary:
-      'Отправить понимание и вклад (фаза understanding_contribution, все участники включая создателя)',
+    summary: 'Отправить понимание и вклад (все участники включая создателя)',
+    description: `
+      Отправить самооценку понимания и распределение вклада участников.
+      
+      ВАЖНО: Голосование полностью опциональное!
+      - Можно отправить пустой массив contributions: [] (не голосовать)
+      - Можно отправить вклад только для тех, кого хотите оценить
+      - Проценты не обязаны суммироваться в 100%
+      - Можно обновить оценку, отправив новую
+      - Создатель видит все оценки (включая пустые) в /all-submissions
+    `,
   })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
     status: 201,
-    description: 'Понимание и вклад отправлены',
+    description: 'Понимание и вклад отправлены (может быть пустым)',
     type: MeetingResponseDto,
   })
-  @ApiResponse({ status: 400, description: 'Встреча не в фазе understanding_contribution' })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
   submitUnderstandingContribution(
     @Param('id') id: string,
@@ -239,21 +258,24 @@ export class MeetingsController {
 
   @Post(':id/task-evaluations')
   @ApiOperation({
-    summary:
-      'Отправить оценки важности задач (фаза task_evaluation, все участники включая создателя)',
+    summary: 'Отправить оценки важности задач (все участники включая создателя)',
+    description: `
+      Отправить оценки важности задач.
+      
+      ВАЖНО: Голосование полностью опциональное!
+      - Можно отправить пустой массив [] (не голосовать)
+      - Можно отправить оценку только для тех задач, которые хотите оценить
+      - Можно обновить оценку, отправив новую
+      - Создатель видит все оценки (включая пустые) в /all-submissions
+    `,
   })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
     status: 201,
-    description: 'Оценки задач отправлены',
+    description: 'Оценки задач отправлены (может быть пустым)',
     type: MeetingResponseDto,
   })
-  @ApiResponse({
-    status: 400,
-    description: 'Встреча не в фазе task_evaluation или оценки уже отправлены',
-  })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
-  @ApiResponse({ status: 403, description: 'Только участники и создатель могут отправлять оценки' })
   submitTaskEvaluation(
     @Param('id') id: string,
     @Body() evaluationDto: SubmitTaskEvaluationDto,
@@ -343,11 +365,21 @@ export class MeetingsController {
   @Get(':id/all-submissions')
   @ApiOperation({
     summary: 'Получить все ответы участников в упрощенном формате (только создатель)',
+    description: `
+      Получить все ответы участников по всем фазам.
+      
+      ВАЖНО: Показывает все оценки, включая пустые!
+      - Участники могут не голосовать вообще (пустой массив [])
+      - Участники могут оценить только некоторых
+      - Создатель видит все оценки, даже пустые
+      - Если участник не оценил кого-то, этого не будет в списке evaluations
+      - Используйте для отслеживания прогресса голосования
+    `,
   })
   @ApiParam({ name: 'id', description: 'ID встречи' })
   @ApiResponse({
     status: 200,
-    description: 'Все ответы участников по всем фазам в упрощенном формате',
+    description: 'Все ответы участников (включая пустые оценки)',
   })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
   @ApiResponse({ status: 403, description: 'Только создатель может просматривать все ответы' })
@@ -434,5 +466,25 @@ export class MeetingsController {
   @ApiResponse({ status: 404, description: 'Meeting not found' })
   getPendingVoters(@Param('id') id: string, @CurrentUser() user: any) {
     return this.meetingsService.getPendingVoters(id, user.userId);
+  }
+
+  @Post('test/trigger-activation')
+  @ApiOperation({
+    summary: '[TEST] Manually trigger meeting activation job',
+    description: `
+      Test endpoint to manually trigger the meeting activation job.
+      
+      This is useful for testing the BullMQ queue and job processing locally.
+      
+      The job will check for meetings with status=UPCOMING and upcomingDate <= now,
+      and activate them.
+    `,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Job triggered successfully',
+  })
+  async testTriggerActivation() {
+    return this.meetingStatusCron.triggerManually();
   }
 }

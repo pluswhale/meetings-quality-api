@@ -26,18 +26,10 @@ export class TaskImportanceEvaluationDto {
 
 export class SubmitTaskEvaluationDto {
   @ApiProperty({
-    description: 'Массив оценок важности задач',
+    description:
+      'Массив оценок важности задач (можно отправить пустой массив - голосование полностью опциональное)',
     type: [TaskImportanceEvaluationDto],
-    example: [
-      {
-        taskAuthorId: '507f1f77bcf86cd799439011',
-        importanceScore: 85,
-      },
-      {
-        taskAuthorId: '507f1f77bcf86cd799439012',
-        importanceScore: 60,
-      },
-    ],
+    example: [],
   })
   @IsArray()
   @ValidateNested({ each: true })

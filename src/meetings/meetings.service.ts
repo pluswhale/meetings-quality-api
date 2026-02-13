@@ -126,7 +126,8 @@ export class MeetingsService {
       ? new Date(createMeetingDto.upcomingDate)
       : now;
 
-    let status: MeetingStatus = upcomingDate > now ? MeetingStatus.UPCOMING : MeetingStatus.ACTIVE;
+    const status: MeetingStatus =
+      upcomingDate > now ? MeetingStatus.UPCOMING : MeetingStatus.ACTIVE;
 
     const createdMeeting = new this.meetingModel({
       title: createMeetingDto.title,

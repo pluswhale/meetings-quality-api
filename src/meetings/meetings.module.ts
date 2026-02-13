@@ -9,6 +9,8 @@ import { Task, TaskSchema } from '../tasks/schemas/task.schema';
 import { AuthModule } from 'src/auth/auth.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
+import { MeetingStatusProcessor } from './workers/meeting-status.processor';
+import { MeetingStatusCron } from './workers/meeting-status.cron';
 
 @Module({
   imports: [
@@ -31,7 +33,7 @@ import { BullModule } from '@nestjs/bullmq';
     ConfigModule,
   ],
   controllers: [MeetingsController],
-  providers: [MeetingsService, MeetingsGateway],
+  providers: [MeetingsService, MeetingsGateway, MeetingStatusProcessor, MeetingStatusCron],
   exports: [MeetingsService, MeetingsGateway],
 })
 export class MeetingsModule {}

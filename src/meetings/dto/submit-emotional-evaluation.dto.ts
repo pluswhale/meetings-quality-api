@@ -44,8 +44,10 @@ export class ParticipantEmotionalEvaluationDto {
 
 export class SubmitEmotionalEvaluationDto {
   @ApiProperty({
-    description: 'Эмоциональные оценки других участников',
+    description:
+      'Эмоциональные оценки других участников (можно отправить пустой массив - голосование полностью опциональное)',
     type: [ParticipantEmotionalEvaluationDto],
+    example: [],
   })
   @IsArray()
   @ValidateNested({ each: true })

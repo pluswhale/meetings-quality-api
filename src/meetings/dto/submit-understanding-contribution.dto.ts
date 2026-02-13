@@ -46,8 +46,10 @@ export class SubmitUnderstandingContributionDto {
   understandingScore: number;
 
   @ApiProperty({
-    description: 'Распределение вклада участников в обсуждение',
+    description:
+      'Распределение вклада участников в обсуждение (можно отправить пустой массив - голосование полностью опциональное)',
     type: [ContributionInfluenceDto],
+    example: [],
   })
   @IsArray()
   @ValidateNested({ each: true })
