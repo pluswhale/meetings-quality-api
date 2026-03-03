@@ -7,7 +7,15 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Meeting, MeetingDocument, MeetingPhase, MeetingStatus } from './schemas/meeting.schema';
+import {
+  Meeting,
+  MeetingDocument,
+  MeetingPhase,
+  MeetingStatus,
+  EmotionalEvaluation,
+  UnderstandingContribution,
+  TaskEvaluation,
+} from './schemas/meeting.schema';
 import { Task, TaskDocument } from '../tasks/schemas/task.schema';
 import { CreateMeetingDto } from './dto/create-meeting.dto';
 import { UpdateMeetingDto } from './dto/update-meeting.dto';
@@ -17,6 +25,100 @@ import { SubmitUnderstandingContributionDto } from './dto/submit-understanding-c
 import { SubmitTaskPlanningDto } from './dto/submit-task-planning.dto';
 import { SubmitTaskEvaluationDto } from './dto/submit-task-evaluation.dto';
 import { MeetingsGateway } from './meetings.gateway';
+
+import { MeetingResponseDto } from './dto/meeting-response.dto';
+import {
+  EmotionalSubmissionDto,
+  GetMeetingSubmissionsResponseDto,
+  ParticipantRefDto,
+  TaskEvaluationSubmissionDto,
+  TaskSubmissionDto,
+  UnderstandingSubmissionDto,
+} from './dto/get-submissions-response.dto';
+
+// ─── Internal type definitions ─────────────────────────────────────────────────
+
+/**
+ * Represents a Mongoose ref field that may be either a raw ObjectId or a fully
+ * populated User document. Mongoose populates refs at runtime but the static
+ * schema types remain ObjectId. We cast to this union at every populate boundary
+ * so all downstream logic is fully typed without resorting to `any`.
+ */
+interface PopulatedUser {
+  _id: Types.ObjectId;
+  fullName: string | null;
+  email: string | null;
+}
+
+/**
+ * Lean projection of Task documents used in getAllSubmissions and analytics.
+ * Using .lean() avoids the overhead of hydrating full Mongoose documents
+ * when we only need to read fields.
+ */
+interface TaskLeanDoc {
+  _id: Types.ObjectId;
+  authorId: Types.ObjectId;
+  description: string;
+  commonQuestion: string;
+  estimateHours: number;
+  approved: boolean;
+  deadline: Date;
+  contributionImportance: number;
+  isCompleted: boolean;
+  createdAt: Date;
+}
+
+/**
+ * Typed Mongo filter used in findAll() to avoid `query: any`.
+ */
+interface MeetingStatusFilter {
+  status?: MeetingStatus | { $in: MeetingStatus[] };
+}
+
+// ─── Module-level pure helpers ─────────────────────────────────────────────────
+// No side effects, no dependency on service state — straightforward to unit-test.
+
+function isPopulatedUser(value: unknown): value is PopulatedUser {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    '_id' in value &&
+    ('fullName' in value || 'email' in value)
+  );
+}
+
+/**
+ * Returns a string representation of an ObjectId field that may be populated
+ * or raw. Used for equality checks (e.g. creator guard).
+ */
+function resolveId(field: Types.ObjectId | PopulatedUser | unknown): string {
+  if (isPopulatedUser(field)) return field._id.toString();
+  return String(field);
+}
+
+/**
+ * Resolves a populated-or-raw user ref into the canonical ParticipantRefDto shape.
+ */
+function resolveUserRef(field: Types.ObjectId | PopulatedUser | unknown): ParticipantRefDto {
+  if (isPopulatedUser(field)) {
+    return { _id: field._id.toString(), fullName: field.fullName, email: field.email };
+  }
+  return { _id: String(field), fullName: null, email: null };
+}
+
+/**
+ * Like resolveUserRef but omits email — used for nested refs where only the
+ * name is needed (e.g. per-evaluation target refs).
+ */
+function resolveCompactRef(field: Types.ObjectId | PopulatedUser | unknown): {
+  _id: string;
+  fullName: string | null;
+} {
+  const ref = resolveUserRef(field);
+  return { _id: ref._id, fullName: ref.fullName };
+}
+
+// ─── Service ───────────────────────────────────────────────────────────────────
 
 @Injectable()
 export class MeetingsService {
@@ -28,95 +130,27 @@ export class MeetingsService {
     private meetingsGateway: MeetingsGateway,
   ) {}
 
-  private transformMeetingResponse(meeting: any): any {
-    const transformId = (field: any) => {
-      if (!field) return field;
-      return (field._id || field).toString();
-    };
+  // ─── Authorization guard ──────────────────────────────────────────────────────
 
-    const transformUser = (user: any) => {
-      if (!user) return null;
-
-      if (typeof user === 'object' && user._id) {
-        return {
-          _id: user._id.toString(),
-          fullName: user.fullName,
-          email: user.email,
-        };
-      }
-
-      return { _id: user.toString() };
-    };
-
-    const transformEvaluation = (evaluation: any) => ({
-      participant: transformUser(evaluation.participantId),
-      evaluations: (evaluation.evaluations || []).map((e: any) => ({
-        targetParticipantId: transformId(e.targetParticipantId),
-        emotionalScale: e.emotionalScale,
-        isToxic: e.isToxic,
-      })),
-      submittedAt: evaluation.submittedAt,
-    });
-
-    const transformContribution = (contribution: any) => ({
-      participant: transformUser(contribution.participantId),
-      understandingScore: contribution.understandingScore,
-      contributions: (contribution.contributions || []).map((c: any) => ({
-        participantId: transformId(c.participantId),
-        contributionPercentage: c.contributionPercentage,
-      })),
-      submittedAt: contribution.submittedAt,
-    });
-
-    const transformTaskPlanning = (task: any) => ({
-      participant: transformUser(task.participantId),
-      taskDescription: task.taskDescription,
-      commonQuestion: task.commonQuestion,
-      deadline: task.deadline,
-      expectedContributionPercentage: task.expectedContributionPercentage,
-      submittedAt: task.submittedAt,
-      approved: task.approved,
-    });
-
-    const transformTaskEvaluation = (evaluation: any) => ({
-      participant: transformUser(evaluation.participantId),
-      evaluations: (evaluation.evaluations || []).map((e: any) => ({
-        taskAuthorId: transformId(e.taskAuthorId),
-        importanceScore: e.importanceScore,
-      })),
-      submittedAt: evaluation.submittedAt,
-    });
-
-    return {
-      _id: meeting._id.toString(),
-      title: meeting.title,
-      question: meeting.question,
-      creatorId: transformUser(meeting.creatorId),
-      participantIds: (meeting.participantIds || []).map(transformId),
-      activeParticipantIds: (meeting.activeParticipants || []).map((ap: any) =>
-        transformUser(ap.participantId),
-      ),
-      currentPhase: meeting.currentPhase,
-      status: meeting.status,
-      emotionalEvaluations: (meeting.emotionalEvaluations || []).map(transformEvaluation),
-      understandingContributions: (meeting.understandingContributions || []).map(
-        transformContribution,
-      ),
-      taskPlannings: (meeting.taskPlannings || []).map(transformTaskPlanning),
-      taskEvaluations: (meeting.taskEvaluations || []).map(transformTaskEvaluation),
-      createdAt: meeting.createdAt,
-      updatedAt: meeting.updatedAt,
-      __v: meeting.__v,
-    };
+  /**
+   * Throws ForbiddenException if the calling user is not the meeting creator.
+   * Centralising this check eliminates the repeated `(meeting.creatorId as any)?._id || …`
+   * pattern that was scattered across every write method.
+   */
+  private assertCreator(meeting: MeetingDocument, userId: string): void {
+    if (resolveId(meeting.creatorId) !== userId) {
+      throw new ForbiddenException('Only the meeting creator can perform this action');
+    }
   }
 
-  async create(createMeetingDto: CreateMeetingDto, userId: string): Promise<Meeting> {
+  // ─── Core CRUD ────────────────────────────────────────────────────────────────
+
+  async create(createMeetingDto: CreateMeetingDto, userId: string): Promise<MeetingResponseDto> {
     const now = new Date();
+    const creatorObjectId = new Types.ObjectId(userId);
 
     const participantIds =
-      createMeetingDto.participantIds?.map((id) => new Types.ObjectId(id)) || [];
-
-    const creatorObjectId = new Types.ObjectId(userId);
+      createMeetingDto.participantIds?.map((id) => new Types.ObjectId(id)) ?? [];
 
     if (!participantIds.some((id) => id.equals(creatorObjectId))) {
       participantIds.push(creatorObjectId);
@@ -129,7 +163,7 @@ export class MeetingsService {
     const status: MeetingStatus =
       upcomingDate > now ? MeetingStatus.UPCOMING : MeetingStatus.ACTIVE;
 
-    const createdMeeting = new this.meetingModel({
+    const saved = await new this.meetingModel({
       title: createMeetingDto.title,
       question: createMeetingDto.question,
       creatorId: creatorObjectId,
@@ -137,22 +171,21 @@ export class MeetingsService {
       currentPhase: MeetingPhase.EMOTIONAL_EVALUATION,
       status,
       upcomingDate,
-    });
+    }).save();
 
-    const saved = await createdMeeting.save();
     return this.transformMeetingResponse(saved);
   }
 
-  async findAll(userId: string, filter?: 'current' | 'past' | 'upcoming'): Promise<any[]> {
-    const query: any = {};
+  async findAll(
+    userId: string,
+    filter?: 'current' | 'past' | 'upcoming',
+  ): Promise<MeetingResponseDto[]> {
+    void userId;
 
-    if (filter === 'current') {
-      query.status = { $in: [MeetingStatus.ACTIVE] };
-    } else if (filter === 'past') {
-      query.status = MeetingStatus.FINISHED;
-    } else if (filter === 'upcoming') {
-      query.status = { $in: [MeetingStatus.UPCOMING] };
-    }
+    const query: MeetingStatusFilter = {};
+    if (filter === 'current') query.status = { $in: [MeetingStatus.ACTIVE] };
+    else if (filter === 'past') query.status = MeetingStatus.FINISHED;
+    else if (filter === 'upcoming') query.status = { $in: [MeetingStatus.UPCOMING] };
 
     const meetings = await this.meetingModel
       .find(query)
@@ -162,7 +195,6 @@ export class MeetingsService {
       .populate('emotionalEvaluations.evaluations.targetParticipantId', 'fullName email')
       .populate('understandingContributions.participantId', 'fullName email')
       .populate('understandingContributions.contributions.participantId', 'fullName email')
-      .populate('taskPlannings.participantId', 'fullName email')
       .populate('taskEvaluations.participantId', 'fullName email')
       .populate('taskEvaluations.evaluations.taskAuthorId', 'fullName email')
       .sort({ createdAt: -1 })
@@ -171,8 +203,12 @@ export class MeetingsService {
     return meetings.map((m) => this.transformMeetingResponse(m));
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private async findOneInternal(id: string, userId: string): Promise<MeetingDocument> {
+  /**
+   * Central internal fetch used by all service methods.
+   * Performs all required populates in a single query so callers never need to
+   * re-fetch the document after the initial load.
+   */
+  private async findOneInternal(id: string): Promise<MeetingDocument> {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Invalid meeting ID');
     }
@@ -186,268 +222,225 @@ export class MeetingsService {
       .populate('emotionalEvaluations.evaluations.targetParticipantId', 'fullName email')
       .populate('understandingContributions.participantId', 'fullName email')
       .populate('understandingContributions.contributions.participantId', 'fullName email')
-      .populate('taskPlannings.participantId', 'fullName email')
+      .populate('taskEvaluations.participantId', 'fullName email')
+      .populate('taskEvaluations.evaluations.taskAuthorId', 'fullName email')
       .exec();
 
-    if (!meeting) {
-      throw new NotFoundException('Meeting not found');
-    }
-
+    if (!meeting) throw new NotFoundException('Meeting not found');
     return meeting;
   }
 
-  async findOne(id: string, userId: string): Promise<any> {
-    const meeting = await this.findOneInternal(id, userId);
-    return this.transformMeetingResponse(meeting);
+  async findOne(id: string, _userId: string): Promise<MeetingResponseDto> {
+    return this.transformMeetingResponse(await this.findOneInternal(id));
   }
 
-  async update(id: string, updateMeetingDto: UpdateMeetingDto, userId: string): Promise<any> {
-    const meeting = await this.findOneInternal(id, userId);
+  async update(id: string, dto: UpdateMeetingDto, userId: string): Promise<MeetingResponseDto> {
+    const meeting = await this.findOneInternal(id);
+    this.assertCreator(meeting, userId);
 
-    const creatorId = (meeting.creatorId as any)?._id || meeting.creatorId;
-    if (!creatorId.equals(new Types.ObjectId(userId))) {
-      throw new ForbiddenException('Only the meeting creator can update the meeting');
+    // Build a typed update payload instead of mutating the DTO with `as any`.
+    const updatePayload: Partial<{
+      title: string;
+      question: string;
+      participantIds: Types.ObjectId[];
+    }> = {};
+
+    if (dto.title !== undefined) updatePayload.title = dto.title;
+    if (dto.question !== undefined) updatePayload.question = dto.question;
+    if (dto.participantIds !== undefined) {
+      updatePayload.participantIds = dto.participantIds.map((pid) => new Types.ObjectId(pid));
     }
 
-    if (updateMeetingDto.participantIds) {
-      (updateMeetingDto as any).participantIds = updateMeetingDto.participantIds.map(
-        (id) => new Types.ObjectId(id),
-      );
-    }
-
-    Object.assign(meeting, updateMeetingDto);
+    Object.assign(meeting, updatePayload);
     const saved = await meeting.save();
     return this.transformMeetingResponse(saved);
   }
 
   async remove(id: string, userId: string): Promise<void> {
-    const meeting = await this.findOneInternal(id, userId);
-
-    const creatorId = (meeting.creatorId as any)?._id || meeting.creatorId;
-    if (!creatorId.equals(new Types.ObjectId(userId))) {
-      throw new ForbiddenException('Only the meeting creator can delete the meeting');
-    }
-
+    const meeting = await this.findOneInternal(id);
+    this.assertCreator(meeting, userId);
     await this.meetingModel.findByIdAndDelete(id);
   }
 
-  async changePhase(id: string, changePhaseDto: ChangePhaseDto, userId: string): Promise<any> {
-    const meeting = await this.findOneInternal(id, userId);
+  async changePhase(id: string, dto: ChangePhaseDto, userId: string): Promise<MeetingResponseDto> {
+    const meeting = await this.findOneInternal(id);
+    this.assertCreator(meeting, userId);
 
-    const creatorId = (meeting.creatorId as any)?._id || meeting.creatorId;
-    if (!creatorId.equals(new Types.ObjectId(userId))) {
-      throw new ForbiddenException('Only the meeting creator can change the phase');
-    }
-
-    if (changePhaseDto.phase === MeetingPhase.FINISHED) {
+    if (dto.phase === MeetingPhase.FINISHED) {
       meeting.status = MeetingStatus.FINISHED;
     } else if (meeting.status === MeetingStatus.UPCOMING) {
       meeting.status = MeetingStatus.ACTIVE;
     }
 
-    meeting.currentPhase = changePhaseDto.phase;
+    meeting.currentPhase = dto.phase;
     await meeting.save();
 
-    this.meetingsGateway.emitPhaseChange(id, {
-      phase: changePhaseDto.phase,
-      status: meeting.status,
-    });
+    this.meetingsGateway.emitPhaseChange(id, { phase: dto.phase, status: meeting.status });
 
     return this.transformMeetingResponse(meeting);
   }
 
+  // ─── Phase submissions ────────────────────────────────────────────────────────
+
   async submitEmotionalEvaluation(
     id: string,
-    evaluationDto: SubmitEmotionalEvaluationDto,
+    dto: SubmitEmotionalEvaluationDto,
     userId: string,
-  ): Promise<any> {
-    const meeting = await this.findOneInternal(id, userId);
-    // [RESTRICTION REMOVED] Phase check deleted
-
+  ): Promise<MeetingResponseDto> {
+    const meeting = await this.findOneInternal(id);
     const userObjectId = new Types.ObjectId(userId);
 
-    // Remove existing evaluation to allow update
-    meeting.emotionalEvaluations = (meeting.emotionalEvaluations as any[]).filter((e: any) => {
-      const participantId = e.participantId?._id || e.participantId;
-      return !participantId.equals(userObjectId);
-    });
+    // Filter then push is idempotent — resubmissions replace the previous entry.
+    meeting.emotionalEvaluations = meeting.emotionalEvaluations.filter(
+      (e) => resolveId(e.participantId) !== userId,
+    );
 
-    (meeting.emotionalEvaluations as any[]).push({
+    meeting.emotionalEvaluations.push({
       participantId: userObjectId,
-      evaluations: evaluationDto.evaluations.map((evaluation) => ({
-        targetParticipantId: new Types.ObjectId(evaluation.targetParticipantId),
-        emotionalScale: evaluation.emotionalScale,
-        isToxic: evaluation.isToxic ?? false,
+      evaluations: dto.evaluations.map((e) => ({
+        targetParticipantId: new Types.ObjectId(e.targetParticipantId),
+        emotionalScale: e.emotionalScale,
+        isToxic: e.isToxic ?? false,
       })),
       submittedAt: new Date(),
-    });
+    } as EmotionalEvaluation);
 
     const saved = await meeting.save();
-
-    // Notify via Socket
     this.meetingsGateway.emitMeetingUpdated(id, 'emotional_evaluation_updated', userId);
-
     return this.transformMeetingResponse(saved);
   }
 
   async submitUnderstandingContribution(
     id: string,
-    contributionDto: SubmitUnderstandingContributionDto,
+    dto: SubmitUnderstandingContributionDto,
     userId: string,
-  ): Promise<any> {
-    const meeting = await this.findOneInternal(id, userId);
-    // [RESTRICTION REMOVED] Phase check deleted
-
+  ): Promise<MeetingResponseDto> {
+    const meeting = await this.findOneInternal(id);
     const userObjectId = new Types.ObjectId(userId);
 
-    // Remove existing contribution to allow update
-    meeting.understandingContributions = (meeting.understandingContributions as any[]).filter(
-      (c: any) => {
-        const participantId = c.participantId?._id || c.participantId;
-        return !participantId.equals(userObjectId);
-      },
+    meeting.understandingContributions = meeting.understandingContributions.filter(
+      (c) => resolveId(c.participantId) !== userId,
     );
 
-    (meeting.understandingContributions as any[]).push({
+    meeting.understandingContributions.push({
       participantId: userObjectId,
-      understandingScore: contributionDto.understandingScore,
-      contributions: contributionDto.contributions.map((contrib) => ({
-        participantId: new Types.ObjectId(contrib.participantId),
-        contributionPercentage: contrib.contributionPercentage,
+      understandingScore: dto.understandingScore,
+      contributions: dto.contributions.map((c) => ({
+        participantId: new Types.ObjectId(c.participantId),
+        contributionPercentage: c.contributionPercentage,
       })),
       submittedAt: new Date(),
-    });
+    } as UnderstandingContribution);
 
     const saved = await meeting.save();
-
-    // Notify via Socket
     this.meetingsGateway.emitMeetingUpdated(id, 'understanding_contribution_updated', userId);
-
     return this.transformMeetingResponse(saved);
   }
 
+  /**
+   * Upserts the Task document for this participant+meeting pair.
+   *
+   * Writing ONLY to the Task collection eliminates the dual-write bug that
+   * previously kept a stale copy in Meeting.taskPlannings. The compound unique
+   * index on (meetingId, authorId) makes the upsert idempotent — resubmissions
+   * update the existing Task rather than creating a duplicate.
+   */
   async submitTaskPlanning(
     id: string,
-    taskDto: SubmitTaskPlanningDto,
+    dto: SubmitTaskPlanningDto,
     userId: string,
-  ): Promise<any> {
-    const meeting = await this.findOneInternal(id, userId);
-    // [RESTRICTION REMOVED] Phase check deleted
-
+  ): Promise<MeetingResponseDto> {
+    const meeting = await this.findOneInternal(id);
     const userObjectId = new Types.ObjectId(userId);
 
-    // Remove existing task from this user if any (Update instead of error)
-    meeting.taskPlannings = (meeting.taskPlannings as any[]).filter((t: any) => {
-      const participantId = t.participantId?._id || t.participantId;
-      return !participantId.equals(userObjectId);
-    });
+    await this.taskModel.findOneAndUpdate(
+      { authorId: userObjectId, meetingId: new Types.ObjectId(id) },
+      {
+        description: dto.taskDescription,
+        commonQuestion: dto.commonQuestion,
+        deadline: new Date(dto.deadline),
+        contributionImportance: dto.expectedContributionPercentage,
+        isCompleted: false,
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
 
-    (meeting.taskPlannings as any[]).push({
-      participantId: userObjectId,
-      taskDescription: taskDto.taskDescription,
-      commonQuestion: taskDto.commonQuestion,
-      deadline: new Date(taskDto.deadline),
-      expectedContributionPercentage: taskDto.expectedContributionPercentage,
-      submittedAt: new Date(),
-    });
-
-    // We also update or create the task document, but simpler here is just to create new
-    // In a real 'update' scenario you might want to findByIdAndUpdate the Task model,
-    // but for this snippet we proceed with creating a linked task.
-    const createdTask = new this.taskModel({
-      description: taskDto.taskDescription,
-      commonQuestion: taskDto.commonQuestion,
-      authorId: userObjectId,
-      meetingId: new Types.ObjectId(id),
-      deadline: new Date(taskDto.deadline),
-      contributionImportance: taskDto.expectedContributionPercentage,
-      isCompleted: false,
-    });
-    await createdTask.save();
-
-    const saved = await meeting.save();
-
-    // Notify via Socket
     this.meetingsGateway.emitMeetingUpdated(id, 'task_planning_updated', userId);
-
-    return this.transformMeetingResponse(saved);
+    return this.transformMeetingResponse(meeting);
   }
 
   async submitTaskEvaluation(
     id: string,
-    evaluationDto: SubmitTaskEvaluationDto,
+    dto: SubmitTaskEvaluationDto,
     userId: string,
-  ): Promise<any> {
-    const meeting = await this.findOneInternal(id, userId);
-    // [RESTRICTION REMOVED] Phase check deleted
-
+  ): Promise<MeetingResponseDto> {
+    const meeting = await this.findOneInternal(id);
     const userObjectId = new Types.ObjectId(userId);
 
-    // [RESTRICTION REMOVED] "Only participants" check deleted
-    // [RESTRICTION REMOVED] "Already submitted" check deleted - now allows overwriting
+    meeting.taskEvaluations = meeting.taskEvaluations.filter(
+      (e) => resolveId(e.participantId) !== userId,
+    );
 
-    // Remove previous evaluation if exists to allow update
-    meeting.taskEvaluations = (meeting.taskEvaluations as any[]).filter((evaluation: any) => {
-      const evalParticipantId = evaluation.participantId?._id || evaluation.participantId;
-      return !evalParticipantId.equals(userObjectId);
-    });
+    // Validate all referenced task authors against the Task collection in a
+    // single query rather than iterating over embedded taskPlannings (which no
+    // longer exist on the Meeting document).
+    if (dto.evaluations.length > 0) {
+      const authorObjectIds = dto.evaluations.map((e) => new Types.ObjectId(e.taskAuthorId));
 
-    // Validate that all task author IDs exist in taskPlannings
-    const taskAuthorIds = (meeting.taskPlannings as any[]).map((task: any) => {
-      const authorId = task.participantId?._id || task.participantId;
-      return authorId.toString();
-    });
+      const existingTasks = await this.taskModel
+        .find({ meetingId: new Types.ObjectId(id), authorId: { $in: authorObjectIds } })
+        .select('authorId')
+        .lean<Array<{ authorId: Types.ObjectId }>>()
+        .exec();
 
-    for (const evaluation of evaluationDto.evaluations) {
-      if (!taskAuthorIds.includes(evaluation.taskAuthorId)) {
-        throw new BadRequestException(
-          `Task author ${evaluation.taskAuthorId} not found in task plannings`,
-        );
+      const validAuthorIds = new Set(existingTasks.map((t) => t.authorId.toString()));
+
+      for (const evaluation of dto.evaluations) {
+        if (!validAuthorIds.has(evaluation.taskAuthorId)) {
+          throw new BadRequestException(
+            `Task author ${evaluation.taskAuthorId} has no task in this meeting`,
+          );
+        }
       }
     }
 
-    (meeting.taskEvaluations as any[]).push({
+    meeting.taskEvaluations.push({
       participantId: userObjectId,
-      evaluations: evaluationDto.evaluations.map((evaluation) => ({
-        taskAuthorId: new Types.ObjectId(evaluation.taskAuthorId),
-        importanceScore: evaluation.importanceScore,
+      evaluations: dto.evaluations.map((e) => ({
+        taskAuthorId: new Types.ObjectId(e.taskAuthorId),
+        importanceScore: e.importanceScore,
       })),
       submittedAt: new Date(),
-    });
+    } as TaskEvaluation);
 
     const saved = await meeting.save();
-
-    // Notify via Socket
     this.meetingsGateway.emitMeetingUpdated(id, 'task_evaluation_updated', userId);
-
     return this.transformMeetingResponse(saved);
   }
 
-  async joinMeeting(id: string, userId: string): Promise<any> {
-    const meeting = await this.findOneInternal(id, userId);
+  // ─── Presence ─────────────────────────────────────────────────────────────────
+
+  async joinMeeting(id: string, userId: string): Promise<Record<string, unknown>> {
+    const meeting = await this.findOneInternal(id);
     const userObjectId = new Types.ObjectId(userId);
 
-    // Check if user is a participant
-    const isParticipant = (meeting.participantIds as any[]).some((pId: any) => {
-      const participantId = pId._id || pId;
-      return participantId.equals(userObjectId);
-    });
+    const isParticipant = (
+      meeting.participantIds as unknown as Array<PopulatedUser | Types.ObjectId>
+    ).some((p) => resolveId(p) === userId);
 
     if (!isParticipant) {
       throw new ForbiddenException('Only participants can join the meeting');
     }
 
     const now = new Date();
-
-    const existingIndex = (meeting.activeParticipants as any[]).findIndex((ap: any) => {
-      const apId = ap.participantId?._id || ap.participantId;
-      return apId.equals(userObjectId);
-    });
+    const existingIndex = meeting.activeParticipants.findIndex(
+      (ap) => resolveId(ap.participantId) === userId,
+    );
 
     if (existingIndex >= 0) {
-      (meeting.activeParticipants as any[])[existingIndex].lastSeen = now;
+      meeting.activeParticipants[existingIndex].lastSeen = now;
     } else {
-      (meeting.activeParticipants as any[]).push({
+      meeting.activeParticipants.push({
         participantId: userObjectId,
         joinedAt: now,
         lastSeen: now,
@@ -457,41 +450,29 @@ export class MeetingsService {
     await meeting.save();
     this.meetingsGateway.emitParticipantJoined(id, userId);
 
-    const populatedMeeting = await this.findOneInternal(id, userId);
-    const activeParticipants = (populatedMeeting.activeParticipants as any[]).map((ap: any) => ({
-      _id: (ap.participantId?._id || ap.participantId).toString(),
-      fullName: ap.participantId?.fullName || null,
-      email: ap.participantId?.email || null,
-      isActive: true,
-      joinedAt: ap.joinedAt,
-      lastSeen: ap.lastSeen,
-    }));
+    const populated = await this.findOneInternal(id);
+    const activeParticipants = populated.activeParticipants.map((ap) => {
+      const ref = resolveUserRef(ap.participantId);
+      return { ...ref, isActive: true, joinedAt: ap.joinedAt, lastSeen: ap.lastSeen };
+    });
 
-    return {
-      meetingId: id,
-      userId,
-      joinedAt: now,
-      activeParticipants,
-    };
+    return { meetingId: id, userId, joinedAt: now, activeParticipants };
   }
 
-  async leaveMeeting(id: string, userId: string): Promise<any> {
-    const meeting = await this.findOneInternal(id, userId);
-    const userObjectId = new Types.ObjectId(userId);
+  async leaveMeeting(id: string, userId: string): Promise<{ success: boolean }> {
+    const meeting = await this.findOneInternal(id);
 
-    meeting.activeParticipants = (meeting.activeParticipants as any[]).filter((ap: any) => {
-      const apId = ap.participantId?._id || ap.participantId;
-      return !apId.equals(userObjectId);
-    });
+    meeting.activeParticipants = meeting.activeParticipants.filter(
+      (ap) => resolveId(ap.participantId) !== userId,
+    );
 
     await meeting.save();
     this.meetingsGateway.emitParticipantLeft(id, userId);
-
     return { success: true };
   }
 
-  async getActiveParticipants(id: string, userId: string): Promise<any> {
-    const meeting = await this.findOneInternal(id, userId);
+  async getActiveParticipants(id: string, _userId: string): Promise<Record<string, unknown>> {
+    const meeting = await this.findOneInternal(id);
     const socketParticipants = this.meetingsGateway.getActiveParticipants(id);
 
     const activeParticipants = socketParticipants.map((p) => ({
@@ -503,141 +484,185 @@ export class MeetingsService {
       lastSeen: p.lastSeen,
     }));
 
-    const totalParticipants = (meeting.participantIds || []).length;
-    const activeCount = activeParticipants.length;
-
     return {
       meetingId: id,
       activeParticipants,
-      totalParticipants,
-      activeCount,
+      totalParticipants: (meeting.participantIds ?? []).length,
+      activeCount: activeParticipants.length,
       source: 'websocket',
     };
   }
 
-  async getAllSubmissions(id: string, userId: string): Promise<any> {
-    const meeting = await this.findOneInternal(id, userId);
+  // ─── getAllSubmissions — composable mapping layer ───────────────────────────
 
-    const creatorId = (meeting.creatorId as any)?._id || meeting.creatorId;
-    if (!creatorId.equals(new Types.ObjectId(userId))) {
-      throw new ForbiddenException('Only the meeting creator can view all submissions');
-    }
+  /**
+   * Returns a typed snapshot of all phase submissions for a meeting.
+   *
+   * Complexity: O(n) — each collection is iterated exactly once.
+   * Tasks are fetched in a single query; Map<authorId, TaskLeanDoc> provides
+   * O(1) participant lookups, replacing the O(n²) nested find() that existed before.
+   */
+  async getAllSubmissions(id: string, userId: string): Promise<GetMeetingSubmissionsResponseDto> {
+    const meeting = await this.findOneInternal(id);
+    this.assertCreator(meeting, userId);
 
-    const submissions: any = {};
+    // Single Task query — avoids the N+1 pattern from the old implementation.
+    const tasks = await this.taskModel
+      .find({ meetingId: new Types.ObjectId(id) })
+      .select(
+        '_id authorId description commonQuestion estimateHours approved deadline contributionImportance isCompleted createdAt',
+      )
+      .lean<TaskLeanDoc[]>()
+      .exec();
 
-    submissions.emotional_evaluation = {};
-    (meeting.emotionalEvaluations as any[]).forEach((evaluation: any) => {
-      const participantId = (evaluation.participantId?._id || evaluation.participantId).toString();
-      submissions.emotional_evaluation[participantId] = {
-        participant: {
-          _id: participantId,
-          fullName: evaluation.participantId?.fullName || null,
-          email: evaluation.participantId?.email || null,
-        },
+    // Build O(1) lookup: participantId → ParticipantRefDto.
+    const participantById = this.buildParticipantMap(meeting);
+
+    return {
+      meetingId: id,
+      submissions: {
+        emotional_evaluation: this.mapEmotionalEvaluations(meeting.emotionalEvaluations),
+        understanding_contribution: this.mapUnderstandingContributions(
+          meeting.understandingContributions,
+        ),
+        task_planning: this.mapTaskSubmissions(tasks, participantById),
+        task_evaluation: this.mapTaskEvaluations(meeting.taskEvaluations),
+      },
+    };
+  }
+
+  /**
+   * Builds a Map<participantIdStr, ParticipantRefDto> from the meeting's
+   * populated participantIds array. Consumed by mapTaskSubmissions() to resolve
+   * author names without re-querying the database.
+   */
+  private buildParticipantMap(meeting: MeetingDocument): Map<string, ParticipantRefDto> {
+    const participants = meeting.participantIds as unknown as Array<PopulatedUser | Types.ObjectId>;
+
+    return new Map(
+      participants.map((p) => {
+        const ref = resolveUserRef(p);
+        return [ref._id, ref];
+      }),
+    );
+  }
+
+  /**
+   * Maps emotional evaluation subdocuments to a record keyed by participantId.
+   * Pure function: no mutation, no side effects.
+   */
+  private mapEmotionalEvaluations(
+    evaluations: EmotionalEvaluation[],
+  ): Record<string, EmotionalSubmissionDto> {
+    return evaluations.reduce<Record<string, EmotionalSubmissionDto>>((acc, evaluation) => {
+      const participant = resolveUserRef(evaluation.participantId);
+
+      acc[participant._id] = {
+        participant,
         submitted: true,
         submittedAt: evaluation.submittedAt,
-        evaluations: (evaluation.evaluations || []).map((e: any) => ({
-          targetParticipant: {
-            _id: (e.targetParticipantId?._id || e.targetParticipantId).toString(),
-            fullName: e.targetParticipantId?.fullName || null,
-          },
+        evaluations: evaluation.evaluations.map((e) => ({
+          targetParticipant: resolveCompactRef(e.targetParticipantId),
           emotionalScale: e.emotionalScale,
           isToxic: e.isToxic,
         })),
       };
-    });
 
-    submissions.understanding_contribution = {};
-    (meeting.understandingContributions as any[]).forEach((contrib: any) => {
-      const participantId = (contrib.participantId?._id || contrib.participantId).toString();
-      submissions.understanding_contribution[participantId] = {
-        participant: {
-          _id: participantId,
-          fullName: contrib.participantId?.fullName || null,
-          email: contrib.participantId?.email || null,
-        },
+      return acc;
+    }, {});
+  }
+
+  /**
+   * Maps understanding/contribution subdocuments to a record keyed by participantId.
+   * Pure function: no mutation, no side effects.
+   */
+  private mapUnderstandingContributions(
+    contributions: UnderstandingContribution[],
+  ): Record<string, UnderstandingSubmissionDto> {
+    return contributions.reduce<Record<string, UnderstandingSubmissionDto>>((acc, contrib) => {
+      const participant = resolveUserRef(contrib.participantId);
+
+      acc[participant._id] = {
+        participant,
         submitted: true,
         submittedAt: contrib.submittedAt,
         understandingScore: contrib.understandingScore,
-        contributions: (contrib.contributions || []).map((c: any) => ({
-          participant: {
-            _id: (c.participantId?._id || c.participantId).toString(),
-            fullName: c.participantId?.fullName || null,
-          },
+        contributions: contrib.contributions.map((c) => ({
+          participant: resolveCompactRef(c.participantId),
           contributionPercentage: c.contributionPercentage,
         })),
       };
-    });
 
-    // Fetch actual Task documents to get taskIds
-    const tasks = await this.taskModel
-      .find({ meetingId: new Types.ObjectId(id) })
-      .select('_id authorId approved')
-      .exec();
+      return acc;
+    }, {});
+  }
 
-    submissions.task_planning = {};
-    (meeting.taskPlannings as any[]).forEach((task: any) => {
-      const participantId = (task.participantId?._id || task.participantId).toString();
+  /**
+   * Maps lean Task documents to a record keyed by authorId.
+   *
+   * Participant display names are resolved from the pre-built Map rather than
+   * re-querying the database, keeping the entire operation O(n) — no nested
+   * find() calls.
+   */
+  private mapTaskSubmissions(
+    tasks: TaskLeanDoc[],
+    participantById: Map<string, ParticipantRefDto>,
+  ): Record<string, TaskSubmissionDto> {
+    return tasks.reduce<Record<string, TaskSubmissionDto>>((acc, task) => {
+      const authorId = task.authorId.toString();
+      const participant = participantById.get(authorId) ?? {
+        _id: authorId,
+        fullName: null,
+        email: null,
+      };
 
-      // Find corresponding Task document
-      const taskDoc = tasks.find((t) => {
-        const authorId = (t.authorId as any)?._id || t.authorId;
-        const taskParticipantId = task.participantId?._id || task.participantId;
-        return authorId.equals(taskParticipantId);
-      });
-
-      submissions.task_planning[participantId] = {
-        participant: {
-          _id: participantId,
-          fullName: task.participantId?.fullName || null,
-          email: task.participantId?.email || null,
-        },
-        taskId: taskDoc?._id?.toString() || null,
+      acc[authorId] = {
+        participant,
+        taskId: task._id.toString(),
         submitted: true,
-        submittedAt: task.submittedAt,
-        taskDescription: task.taskDescription,
+        submittedAt: task.createdAt,
+        description: task.description,
         commonQuestion: task.commonQuestion,
+        estimateHours: task.estimateHours,
         approved: task.approved,
         deadline: task.deadline,
-        expectedContributionPercentage: task.expectedContributionPercentage,
+        contributionImportance: task.contributionImportance,
+        isCompleted: task.isCompleted,
       };
-    });
 
-    submissions.task_evaluation = {};
-    (meeting.taskEvaluations as any[]).forEach((evaluation: any) => {
-      const participantId = (evaluation.participantId?._id || evaluation.participantId).toString();
-      submissions.task_evaluation[participantId] = {
-        participant: {
-          _id: participantId,
-          fullName: evaluation.participantId?.fullName || null,
-          email: evaluation.participantId?.email || null,
-        },
+      return acc;
+    }, {});
+  }
+
+  /**
+   * Maps task evaluation subdocuments to a record keyed by participantId.
+   * Pure function: no mutation, no side effects.
+   */
+  private mapTaskEvaluations(
+    evaluations: TaskEvaluation[],
+  ): Record<string, TaskEvaluationSubmissionDto> {
+    return evaluations.reduce<Record<string, TaskEvaluationSubmissionDto>>((acc, evaluation) => {
+      const participant = resolveUserRef(evaluation.participantId);
+
+      acc[participant._id] = {
+        participant,
         submitted: true,
         submittedAt: evaluation.submittedAt,
-        evaluations: (evaluation.evaluations || []).map((e: any) => ({
-          taskAuthor: {
-            _id: (e.taskAuthorId?._id || e.taskAuthorId).toString(),
-            fullName: e.taskAuthorId?.fullName || null,
-          },
+        evaluations: evaluation.evaluations.map((e) => ({
+          taskAuthor: resolveCompactRef(e.taskAuthorId),
           importanceScore: e.importanceScore,
         })),
       };
-    });
 
-    return {
-      meetingId: id,
-      submissions,
-    };
+      return acc;
+    }, {});
   }
 
-  async getVotingInfo(id: string, userId: string) {
-    const meeting = await this.findOneInternal(id, userId);
+  // ─── Voting & submission status ───────────────────────────────────────────────
 
-    // NOTE: Allowed viewing voting info for creator only, kept as requested in other logic
-    const creatorId = (meeting.creatorId as any)?._id || meeting.creatorId;
-    if (!creatorId.equals(new Types.ObjectId(userId))) {
-      throw new ForbiddenException('Only the meeting creator can view voting information');
-    }
+  async getVotingInfo(id: string, userId: string): Promise<Record<string, unknown>> {
+    const meeting = await this.findOneInternal(id);
+    this.assertCreator(meeting, userId);
 
     const socketParticipants = this.meetingsGateway.getActiveParticipants(id);
 
@@ -649,86 +674,41 @@ export class MeetingsService {
       lastSeen: p.lastSeen,
     }));
 
-    let submissionStatus: any = {};
-
-    // Still categorizing by current phase for the response structure,
-    // but the data might populate from any phase now
-    switch (meeting.currentPhase) {
-      case MeetingPhase.EMOTIONAL_EVALUATION:
-        submissionStatus = {
-          phase: MeetingPhase.EMOTIONAL_EVALUATION,
-          submitted: (meeting.emotionalEvaluations as any[]).map((e: any) => {
-            const participantId = e.participantId?._id || e.participantId;
-            return participantId.toString();
-          }),
-        };
-        break;
-
-      case MeetingPhase.UNDERSTANDING_CONTRIBUTION:
-        submissionStatus = {
-          phase: MeetingPhase.UNDERSTANDING_CONTRIBUTION,
-          submitted: (meeting.understandingContributions as any[]).map((c: any) => {
-            const participantId = c.participantId?._id || c.participantId;
-            return participantId.toString();
-          }),
-        };
-        break;
-
-      case MeetingPhase.TASK_PLANNING:
-        submissionStatus = {
-          phase: MeetingPhase.TASK_PLANNING,
-          submitted: (meeting.taskPlannings as any[]).map((t: any) => {
-            const participantId = t.participantId?._id || t.participantId;
-            return participantId.toString();
-          }),
-        };
-        break;
-
-      default:
-        submissionStatus = {
-          phase: meeting.currentPhase,
-          submitted: [],
-        };
-    }
+    const submittedIds = await this.getSubmittedIdsForPhase(id, meeting.currentPhase, meeting);
+    const submitted = submittedIds.length;
+    const total = activeParticipants.length;
 
     return {
       meetingId: id,
       currentPhase: meeting.currentPhase,
       votingParticipants: activeParticipants,
-      totalVotingParticipants: activeParticipants.length,
-      submissionStatus,
+      totalVotingParticipants: total,
+      submissionStatus: { phase: meeting.currentPhase, submitted: submittedIds },
       votingProgress: {
-        submitted: submissionStatus.submitted?.length || 0,
-        total: activeParticipants.length,
-        percentage:
-          activeParticipants.length > 0
-            ? Math.round(
-                ((submissionStatus.submitted?.length || 0) / activeParticipants.length) * 100,
-              )
-            : 0,
+        submitted,
+        total,
+        percentage: total > 0 ? Math.round((submitted / total) * 100) : 0,
       },
     };
   }
 
-  // ... (Rest of the get* methods remain mostly same as they are read-only) ...
-  async getPhaseSubmissions(id: string, userId: string) {
-    const meeting = await this.findOneInternal(id, userId);
-    const creatorId = (meeting.creatorId as any)?._id || meeting.creatorId;
-    if (!creatorId.equals(new Types.ObjectId(userId))) {
-      throw new ForbiddenException('Only the meeting creator can view detailed submissions');
-    }
-    const participants = meeting.participantIds as any[];
-    const participantList = participants
-      .filter((p: any) => {
-        const pId = (p._id || p).toString();
-        const cId = creatorId.toString();
-        return pId !== cId;
-      })
-      .map((p: any) => ({
-        _id: (p._id || p).toString(),
-        fullName: p.fullName,
-        email: p.email,
-      }));
+  async getPhaseSubmissions(id: string, userId: string): Promise<Record<string, unknown>> {
+    const meeting = await this.findOneInternal(id);
+    this.assertCreator(meeting, userId);
+
+    const creatorId = resolveId(meeting.creatorId);
+
+    const participants = (
+      meeting.participantIds as unknown as Array<PopulatedUser | Types.ObjectId>
+    )
+      .filter((p) => resolveId(p) !== creatorId)
+      .map((p) => resolveUserRef(p));
+
+    // Task data lives exclusively in the Task collection.
+    const tasks = await this.taskModel
+      .find({ meetingId: new Types.ObjectId(id) })
+      .populate('authorId', 'fullName email')
+      .exec();
 
     return {
       meetingId: id,
@@ -736,317 +716,267 @@ export class MeetingsService {
       question: meeting.question,
       currentPhase: meeting.currentPhase,
       status: meeting.status,
-      participants: participantList,
-      emotionalEvaluations: (meeting.emotionalEvaluations as any[]).map((e: any) => ({
-        participantId: (e.participantId?._id || e.participantId).toString(),
-        participant: e.participantId?.fullName
-          ? { fullName: e.participantId.fullName, email: e.participantId.email }
-          : null,
-        evaluations: (e.evaluations || []).map((evaluation: any) => ({
-          targetParticipantId: (
-            evaluation.targetParticipantId?._id || evaluation.targetParticipantId
-          ).toString(),
-          targetParticipant: evaluation.targetParticipantId?.fullName
-            ? {
-                fullName: evaluation.targetParticipantId.fullName,
-                email: evaluation.targetParticipantId.email,
-              }
-            : null,
-          emotionalScale: evaluation.emotionalScale,
-          isToxic: evaluation.isToxic,
+      participants,
+      emotionalEvaluations: meeting.emotionalEvaluations.map((e) => ({
+        participantId: resolveId(e.participantId),
+        participant: resolveUserRef(e.participantId),
+        evaluations: e.evaluations.map((ev) => ({
+          targetParticipantId: resolveId(ev.targetParticipantId),
+          targetParticipant: resolveUserRef(ev.targetParticipantId),
+          emotionalScale: ev.emotionalScale,
+          isToxic: ev.isToxic,
         })),
         submittedAt: e.submittedAt,
       })),
-      understandingContributions: (meeting.understandingContributions as any[]).map((c: any) => ({
-        participantId: (c.participantId?._id || c.participantId).toString(),
-        participant: c.participantId?.fullName
-          ? { fullName: c.participantId.fullName, email: c.participantId.email }
-          : null,
+      understandingContributions: meeting.understandingContributions.map((c) => ({
+        participantId: resolveId(c.participantId),
+        participant: resolveUserRef(c.participantId),
         understandingScore: c.understandingScore,
-        contributions: (c.contributions || []).map((contrib: any) => ({
-          participantId: (contrib.participantId?._id || contrib.participantId).toString(),
-          participant: contrib.participantId?.fullName
-            ? { fullName: contrib.participantId.fullName, email: contrib.participantId.email }
-            : null,
+        contributions: c.contributions.map((contrib) => ({
+          participantId: resolveId(contrib.participantId),
+          participant: resolveUserRef(contrib.participantId),
           contributionPercentage: contrib.contributionPercentage,
         })),
         submittedAt: c.submittedAt,
       })),
-      taskPlannings: (meeting.taskPlannings as any[]).map((t: any) => ({
-        participantId: (t.participantId?._id || t.participantId).toString(),
-        participant: t.participantId?.fullName
-          ? { fullName: t.participantId.fullName, email: t.participantId.email }
-          : null,
-        taskDescription: t.taskDescription,
-        commonQuestion: t.commonQuestion,
-        deadline: t.deadline,
-        expectedContributionPercentage: t.expectedContributionPercentage,
-        submittedAt: t.submittedAt,
-      })),
+      taskPlannings: tasks.map((task) => {
+        const author = resolveUserRef(task.authorId as unknown as PopulatedUser | Types.ObjectId);
+        return {
+          participantId: author._id,
+          participant: { fullName: author.fullName, email: author.email },
+          description: task.description,
+          commonQuestion: task.commonQuestion,
+          deadline: task.deadline,
+          contributionImportance: task.contributionImportance,
+          estimateHours: task.estimateHours,
+          approved: task.approved,
+          submittedAt: task.createdAt,
+        };
+      }),
     };
   }
 
-  async getStatistics(id: string, userId: string) {
-    // Statistics logic (Read only) - No changes needed unless you want stats for active meetings
-    const meeting = await this.findOneInternal(id, userId);
+  async getStatistics(id: string, _userId: string): Promise<Record<string, unknown>> {
+    const meeting = await this.findOneInternal(id);
+
     if (meeting.status !== MeetingStatus.FINISHED) {
       throw new BadRequestException('Statistics are only available for finished meetings');
     }
-    // ... (rest of implementation remains the same)
 
-    // Re-implementing just the start to keep file complete if needed
-    const participants = meeting.participantIds as any[];
-    const participantStats = participants.map((participant: any) => {
-      const participantId = participant._id || participant;
-      const understanding = (meeting.understandingContributions as any[]).find((c: any) => {
-        const contribParticipantId = c.participantId?._id || c.participantId;
-        return contribParticipantId.equals(participantId);
-      });
-      const emotionalScores = (meeting.emotionalEvaluations as any[]).flatMap((e: any) =>
-        (e.evaluations || [])
-          .filter((ee: any) => {
-            const targetId = ee.targetParticipantId?._id || ee.targetParticipantId;
-            return targetId.equals(participantId);
-          })
-          .map((ee: any) => ({
-            emotionalScale: ee.emotionalScale,
-            isToxic: ee.isToxic,
-          })),
+    const participants = meeting.participantIds as unknown as Array<PopulatedUser | Types.ObjectId>;
+
+    const participantStats = participants.map((participant) => {
+      const participantId = resolveId(participant);
+      const participantRef = resolveUserRef(participant);
+
+      const understanding = meeting.understandingContributions.find(
+        (c) => resolveId(c.participantId) === participantId,
       );
+
+      const emotionalScores = meeting.emotionalEvaluations.flatMap((e) =>
+        e.evaluations
+          .filter((ee) => resolveId(ee.targetParticipantId) === participantId)
+          .map((ee) => ({ emotionalScale: ee.emotionalScale, isToxic: ee.isToxic })),
+      );
+
       const avgEmotionalScale =
         emotionalScores.length > 0
           ? emotionalScores.reduce((sum, e) => sum + e.emotionalScale, 0) / emotionalScores.length
           : 0;
-      const toxicityFlags = emotionalScores.filter((e) => e.isToxic).length;
-      const contributions = (meeting.understandingContributions as any[])
-        .flatMap((c: any) => c.contributions || [])
-        .filter((contrib: any) => {
-          const contribId = contrib.participantId?._id || contrib.participantId;
-          return contribId.equals(participantId);
-        });
+
+      const contributionsReceived = meeting.understandingContributions
+        .flatMap((c) => c.contributions)
+        .filter((c) => resolveId(c.participantId) === participantId);
+
       const avgContribution =
-        contributions.length > 0
-          ? contributions.reduce((sum: number, c: any) => sum + c.contributionPercentage, 0) /
-            contributions.length
+        contributionsReceived.length > 0
+          ? contributionsReceived.reduce((sum, c) => sum + c.contributionPercentage, 0) /
+            contributionsReceived.length
           : 0;
+
       return {
-        participant: {
-          _id: participant._id || participant,
-          fullName: participant.fullName,
-          email: participant.email,
-        },
-        understandingScore: understanding?.understandingScore || 0,
+        participant: participantRef,
+        understandingScore: understanding?.understandingScore ?? 0,
         averageEmotionalScale: avgEmotionalScale,
-        toxicityFlags,
+        toxicityFlags: emotionalScores.filter((e) => e.isToxic).length,
         averageContribution: avgContribution,
       };
     });
+
     const avgUnderstanding =
       participantStats.length > 0
         ? participantStats.reduce((sum, p) => sum + p.understandingScore, 0) /
           participantStats.length
         : 0;
-    return {
-      question: meeting.question,
-      avgUnderstanding,
-      participantStats,
-    };
+
+    return { question: meeting.question, avgUnderstanding, participantStats };
   }
 
-  async getTaskEvaluationAnalytics(id: string, userId: string) {
-    const meeting = await this.findOneInternal(id, userId);
-    const creatorId = meeting.creatorId._id || meeting.creatorId;
-    const userObjectId = new Types.ObjectId(userId);
-    if (!creatorId.equals(userObjectId)) {
-      throw new ForbiddenException('Only the creator can view task evaluation analytics');
+  async getTaskEvaluationAnalytics(id: string, userId: string): Promise<Record<string, unknown>> {
+    const meeting = await this.findOneInternal(id);
+    this.assertCreator(meeting, userId);
+
+    if (meeting.taskEvaluations.length === 0) {
+      return { meetingId: id, message: 'No task evaluations submitted yet', taskAnalytics: [] };
     }
-    if ((meeting.taskEvaluations as any[]).length === 0) {
-      return {
-        meetingId: id,
-        message: 'No task evaluations submitted yet',
-        taskAnalytics: [],
-      };
-    }
-    const taskAnalytics = (meeting.taskPlannings as any[]).map((task: any) => {
-      const taskAuthorId = (task.participantId?._id || task.participantId).toString();
-      const evaluationsForTask: number[] = [];
-      (meeting.taskEvaluations as any[]).forEach((evaluation: any) => {
-        const evalForThisTask = (evaluation.evaluations || []).find((e: any) => {
-          const authorId = (e.taskAuthorId?._id || e.taskAuthorId).toString();
-          return authorId === taskAuthorId;
-        });
-        if (evalForThisTask) {
-          evaluationsForTask.push(evalForThisTask.importanceScore);
+
+    // Fetch task data from the authoritative Task collection.
+    const tasks = await this.taskModel
+      .find({ meetingId: new Types.ObjectId(id) })
+      .populate('authorId', 'fullName email')
+      .exec();
+
+    // Aggregate importance scores per author in one pass: O(evaluators × evaluations_per_evaluator).
+    const scoresByAuthor = meeting.taskEvaluations.reduce<Map<string, number[]>>(
+      (map, evaluation) => {
+        for (const e of evaluation.evaluations) {
+          const authorId = resolveId(e.taskAuthorId);
+          const existing = map.get(authorId) ?? [];
+          existing.push(e.importanceScore);
+          map.set(authorId, existing);
         }
-      });
-      const averageScore =
-        evaluationsForTask.length > 0
-          ? evaluationsForTask.reduce((sum, score) => sum + score, 0) / evaluationsForTask.length
-          : 0;
-      const minScore = evaluationsForTask.length > 0 ? Math.min(...evaluationsForTask) : 0;
-      const maxScore = evaluationsForTask.length > 0 ? Math.max(...evaluationsForTask) : 0;
-      let medianScore = 0;
-      if (evaluationsForTask.length > 0) {
-        const sorted = [...evaluationsForTask].sort((a, b) => a - b);
+        return map;
+      },
+      new Map(),
+    );
+
+    const taskAnalytics = tasks.map((task) => {
+      const authorId = resolveId(task.authorId as unknown as PopulatedUser | Types.ObjectId);
+      const scores = scoresByAuthor.get(authorId) ?? [];
+      const avg = scores.length > 0 ? scores.reduce((s, n) => s + n, 0) / scores.length : 0;
+      const min = scores.length > 0 ? Math.min(...scores) : 0;
+      const max = scores.length > 0 ? Math.max(...scores) : 0;
+
+      let median = 0;
+      if (scores.length > 0) {
+        const sorted = [...scores].sort((a, b) => a - b);
         const mid = Math.floor(sorted.length / 2);
-        medianScore = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+        median = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
       }
+
       return {
-        taskAuthor: {
-          _id: taskAuthorId,
-          fullName: task.participantId?.fullName || null,
-          email: task.participantId?.email || null,
-        },
-        taskDescription: task.taskDescription,
+        taskAuthor: resolveUserRef(task.authorId as unknown as PopulatedUser | Types.ObjectId),
+        description: task.description,
         commonQuestion: task.commonQuestion,
         deadline: task.deadline,
-        originalContributionPercentage: task.expectedContributionPercentage,
+        contributionImportance: task.contributionImportance,
         evaluations: {
-          count: evaluationsForTask.length,
-          average: Math.round(averageScore * 100) / 100,
-          min: minScore,
-          max: maxScore,
-          median: Math.round(medianScore * 100) / 100,
-          scores: evaluationsForTask,
+          count: scores.length,
+          average: Math.round(avg * 100) / 100,
+          min,
+          max,
+          median: Math.round(median * 100) / 100,
+          scores,
         },
-        evaluationDifference:
-          Math.round((averageScore - task.expectedContributionPercentage) * 100) / 100,
+        evaluationDifference: Math.round((avg - task.contributionImportance) * 100) / 100,
       };
     });
+
     taskAnalytics.sort((a, b) => b.evaluations.average - a.evaluations.average);
+
     return {
       meetingId: id,
       meetingTitle: meeting.title,
       totalTasks: taskAnalytics.length,
-      totalEvaluators: (meeting.taskEvaluations as any[]).length,
-      totalParticipants: (meeting.participantIds as any[]).length,
+      totalEvaluators: meeting.taskEvaluations.length,
+      totalParticipants: meeting.participantIds.length,
       taskAnalytics,
     };
   }
 
-  async getFinalStatistics(id: string, userId: string) {
-    const meeting = await this.findOneInternal(id, userId);
-    const creatorId = meeting.creatorId._id || meeting.creatorId;
-    const userObjectId = new Types.ObjectId(userId);
-    if (!creatorId.equals(userObjectId)) {
-      throw new ForbiddenException('Only the creator can view final statistics');
-    }
-    const participantStats = (meeting.participantIds as any[]).map((participant: any) => {
-      const participantId = (participant._id || participant).toString();
-      const participantObjectId = participant._id || participant;
-      const participantInfo = {
-        _id: participantId,
-        fullName: participant.fullName || null,
-        email: participant.email || null,
-      };
-      const emotionalEvaluationsGiven = (meeting.emotionalEvaluations as any[])
-        .filter((e: any) => {
-          const evalParticipantId = e.participantId?._id || e.participantId;
-          return evalParticipantId.equals(participantObjectId);
-        })
-        .flatMap((e: any) =>
-          (e.evaluations || []).map((ev: any) => ({
-            targetParticipant: {
-              _id: (ev.targetParticipantId?._id || ev.targetParticipantId).toString(),
-              fullName: ev.targetParticipantId?.fullName || null,
-            },
+  async getFinalStatistics(id: string, userId: string): Promise<Record<string, unknown>> {
+    const meeting = await this.findOneInternal(id);
+    this.assertCreator(meeting, userId);
+
+    // Fetch tasks once and index by authorId for O(1) per-participant lookups.
+    const tasks = await this.taskModel.find({ meetingId: new Types.ObjectId(id) }).exec();
+    const taskByAuthorId = new Map(tasks.map((t) => [t.authorId.toString(), t]));
+
+    const participants = meeting.participantIds as unknown as Array<PopulatedUser | Types.ObjectId>;
+
+    const participantStatistics = participants.map((participant) => {
+      const participantId = resolveId(participant);
+      const participantInfo = resolveUserRef(participant);
+
+      const emotionalEvaluationsGiven = meeting.emotionalEvaluations
+        .filter((e) => resolveId(e.participantId) === participantId)
+        .flatMap((e) =>
+          e.evaluations.map((ev) => ({
+            targetParticipant: resolveCompactRef(ev.targetParticipantId),
             emotionalScale: ev.emotionalScale,
             isToxic: ev.isToxic,
           })),
         );
-      const emotionalEvaluationsReceived = (meeting.emotionalEvaluations as any[]).flatMap(
-        (e: any) =>
-          (e.evaluations || [])
-            .filter((ev: any) => {
-              const targetId = ev.targetParticipantId?._id || ev.targetParticipantId;
-              return targetId.equals(participantObjectId);
-            })
-            .map((ev: any) => ({
-              fromParticipant: {
-                _id: (e.participantId?._id || e.participantId).toString(),
-                fullName: e.participantId?.fullName || null,
-              },
-              emotionalScale: ev.emotionalScale,
-              isToxic: ev.isToxic,
-            })),
+
+      const emotionalEvaluationsReceived = meeting.emotionalEvaluations.flatMap((e) =>
+        e.evaluations
+          .filter((ev) => resolveId(ev.targetParticipantId) === participantId)
+          .map((ev) => ({
+            fromParticipant: resolveCompactRef(e.participantId),
+            emotionalScale: ev.emotionalScale,
+            isToxic: ev.isToxic,
+          })),
       );
-      const understandingContribution = (meeting.understandingContributions as any[]).find(
-        (c: any) => {
-          const contribParticipantId = c.participantId?._id || c.participantId;
-          return contribParticipantId.equals(participantObjectId);
-        },
+
+      const understandingEntry = meeting.understandingContributions.find(
+        (c) => resolveId(c.participantId) === participantId,
       );
-      const contributionsGiven = understandingContribution
+
+      const contributionsGiven = understandingEntry
         ? {
-            understandingScore: understandingContribution.understandingScore,
-            contributions: (understandingContribution.contributions || []).map((c: any) => ({
-              participant: {
-                _id: (c.participantId?._id || c.participantId).toString(),
-                fullName: c.participantId?.fullName || null,
-              },
+            understandingScore: understandingEntry.understandingScore,
+            contributions: understandingEntry.contributions.map((c) => ({
+              participant: resolveCompactRef(c.participantId),
               contributionPercentage: c.contributionPercentage,
             })),
-            submittedAt: understandingContribution.submittedAt,
+            submittedAt: understandingEntry.submittedAt,
           }
         : null;
-      const contributionsReceived = (meeting.understandingContributions as any[]).flatMap(
-        (c: any) =>
-          (c.contributions || [])
-            .filter((contrib: any) => {
-              const contribTargetId = contrib.participantId?._id || contrib.participantId;
-              return contribTargetId.equals(participantObjectId);
-            })
-            .map((contrib: any) => ({
-              fromParticipant: {
-                _id: (c.participantId?._id || c.participantId).toString(),
-                fullName: c.participantId?.fullName || null,
-              },
-              contributionPercentage: contrib.contributionPercentage,
-            })),
+
+      const contributionsReceived = meeting.understandingContributions.flatMap((c) =>
+        c.contributions
+          .filter((contrib) => resolveId(contrib.participantId) === participantId)
+          .map((contrib) => ({
+            fromParticipant: resolveCompactRef(c.participantId),
+            contributionPercentage: contrib.contributionPercentage,
+          })),
       );
-      const taskCreated = (meeting.taskPlannings as any[]).find((t: any) => {
-        const taskParticipantId = t.participantId?._id || t.participantId;
-        return taskParticipantId.equals(participantObjectId);
-      });
-      const taskInfo = taskCreated
+
+      // O(1) task lookup via pre-built Map — no nested find() inside the loop.
+      const task = taskByAuthorId.get(participantId);
+      const taskInfo = task
         ? {
-            taskDescription: taskCreated.taskDescription,
-            commonQuestion: taskCreated.commonQuestion,
-            deadline: taskCreated.deadline,
-            ownContributionEstimate: taskCreated.expectedContributionPercentage,
-            submittedAt: taskCreated.submittedAt,
+            description: task.description,
+            commonQuestion: task.commonQuestion,
+            deadline: task.deadline,
+            contributionImportance: task.contributionImportance,
+            estimateHours: task.estimateHours,
+            approved: task.approved,
+            isCompleted: task.isCompleted,
+            submittedAt: task.createdAt,
           }
         : null;
-      const taskEvaluationsGiven = (meeting.taskEvaluations as any[])
-        .filter((e: any) => {
-          const evalParticipantId = e.participantId?._id || e.participantId;
-          return evalParticipantId.equals(participantObjectId);
-        })
-        .flatMap((e: any) =>
-          (e.evaluations || []).map((ev: any) => ({
-            taskAuthor: {
-              _id: (ev.taskAuthorId?._id || ev.taskAuthorId).toString(),
-              fullName: ev.taskAuthorId?.fullName || null,
-            },
+
+      const taskEvaluationsGiven = meeting.taskEvaluations
+        .filter((e) => resolveId(e.participantId) === participantId)
+        .flatMap((e) =>
+          e.evaluations.map((ev) => ({
+            taskAuthor: resolveCompactRef(ev.taskAuthorId),
             importanceScore: ev.importanceScore,
           })),
         );
-      const taskEvaluationsReceived = taskCreated
-        ? (meeting.taskEvaluations as any[]).flatMap((e: any) =>
-            (e.evaluations || [])
-              .filter((ev: any) => {
-                const taskAuthorId = ev.taskAuthorId?._id || ev.taskAuthorId;
-                return taskAuthorId.equals(participantObjectId);
-              })
-              .map((ev: any) => ({
-                fromParticipant: {
-                  _id: (e.participantId?._id || e.participantId).toString(),
-                  fullName: e.participantId?.fullName || null,
-                },
+
+      const taskEvaluationsReceived = task
+        ? meeting.taskEvaluations.flatMap((e) =>
+            e.evaluations
+              .filter((ev) => resolveId(ev.taskAuthorId) === participantId)
+              .map((ev) => ({
+                fromParticipant: resolveCompactRef(e.participantId),
                 importanceScore: ev.importanceScore,
               })),
           )
         : [];
+
       return {
         participant: participantInfo,
         emotionalEvaluations: {
@@ -1064,60 +994,34 @@ export class MeetingsService {
         },
       };
     });
+
     return {
       meetingId: id,
       meetingTitle: meeting.title,
       meetingQuestion: meeting.question,
       currentPhase: meeting.currentPhase,
       status: meeting.status,
-      creator: {
-        _id: creatorId.toString(),
-        fullName: (meeting.creatorId as any)?.fullName || null,
-        email: (meeting.creatorId as any)?.email || null,
-      },
-      totalParticipants: participantStats.length,
-      participantStatistics: participantStats,
+      creator: resolveUserRef(meeting.creatorId),
+      totalParticipants: participantStatistics.length,
+      participantStatistics,
       createdAt: meeting.createdAt,
       updatedAt: meeting.updatedAt,
     };
   }
 
-  async getPendingVoters(meetingId: string, userId: string) {
-    const meeting = await this.findOneInternal(meetingId, userId);
+  async getPendingVoters(meetingId: string, userId: string): Promise<Record<string, unknown>> {
+    const meeting = await this.findOneInternal(meetingId);
+    this.assertCreator(meeting, userId);
 
-    const creatorId = meeting.creatorId._id || meeting.creatorId;
-    if (!creatorId.equals(new Types.ObjectId(userId))) {
-      throw new ForbiddenException('Only creator can view pending voters');
-    }
-
-    // 1. Active users from sockets
     const activeParticipants = this.meetingsGateway.getActiveParticipants(meetingId);
+    const submittedIds = await this.getSubmittedIdsForPhase(
+      meetingId,
+      meeting.currentPhase,
+      meeting,
+    );
+    const submittedSet = new Set(submittedIds);
 
-    // 2. Submitted users by phase
-    let submittedIds: string[] = [];
-
-    switch (meeting.currentPhase) {
-      case MeetingPhase.EMOTIONAL_EVALUATION:
-        submittedIds = meeting.emotionalEvaluations.map((e) =>
-          (e.participantId._id || e.participantId).toString(),
-        );
-        break;
-
-      case MeetingPhase.UNDERSTANDING_CONTRIBUTION:
-        submittedIds = meeting.understandingContributions.map((c) =>
-          (c.participantId._id || c.participantId).toString(),
-        );
-        break;
-
-      case MeetingPhase.TASK_PLANNING:
-        submittedIds = meeting.taskPlannings.map((t) =>
-          (t.participantId._id || t.participantId).toString(),
-        );
-        break;
-    }
-
-    // 3. Pending = active - submitted
-    const pending = activeParticipants.filter((p) => !submittedIds.includes(p.userId));
+    const pending = activeParticipants.filter((p) => !submittedSet.has(p.userId));
 
     return {
       meetingId,
@@ -1130,6 +1034,92 @@ export class MeetingsService {
         joinedAt: p.joinedAt,
         lastSeen: p.lastSeen,
       })),
+    };
+  }
+
+  // ─── Private utilities ────────────────────────────────────────────────────────
+
+  /**
+   * Returns the list of participantId strings that have already submitted
+   * in the given phase. For TASK_PLANNING, defers to the Task collection
+   * since Meeting no longer embeds task planning data.
+   */
+  private async getSubmittedIdsForPhase(
+    meetingId: string,
+    phase: MeetingPhase,
+    meeting: MeetingDocument,
+  ): Promise<string[]> {
+    switch (phase) {
+      case MeetingPhase.EMOTIONAL_EVALUATION:
+        return meeting.emotionalEvaluations.map((e) => resolveId(e.participantId));
+
+      case MeetingPhase.UNDERSTANDING_CONTRIBUTION:
+        return meeting.understandingContributions.map((c) => resolveId(c.participantId));
+
+      case MeetingPhase.TASK_PLANNING: {
+        const tasks = await this.taskModel
+          .find({ meetingId: new Types.ObjectId(meetingId) })
+          .select('authorId')
+          .lean<Array<{ authorId: Types.ObjectId }>>()
+          .exec();
+        return tasks.map((t) => t.authorId.toString());
+      }
+
+      default:
+        return [];
+    }
+  }
+
+  /**
+   * Serialises a MeetingDocument into the typed API response shape.
+   *
+   * All ObjectId fields are converted to strings; populated User refs are
+   * resolved to ParticipantRefDto objects via the pure helper functions.
+   * Task planning data is intentionally absent — consumers should use
+   * GET /tasks?meetingId=:id to access task data.
+   */
+  private transformMeetingResponse(meeting: MeetingDocument): MeetingResponseDto {
+    return {
+      _id: meeting._id.toString(),
+      title: meeting.title,
+      question: meeting.question,
+      creatorId: resolveUserRef(meeting.creatorId),
+      participantIds: (
+        meeting.participantIds as unknown as Array<PopulatedUser | Types.ObjectId>
+      ).map((p) => resolveId(p)),
+      activeParticipantIds: meeting.activeParticipants.map((ap) =>
+        resolveUserRef(ap.participantId),
+      ),
+      currentPhase: meeting.currentPhase,
+      status: meeting.status,
+      emotionalEvaluations: meeting.emotionalEvaluations.map((e) => ({
+        participant: resolveUserRef(e.participantId),
+        evaluations: e.evaluations.map((ev) => ({
+          targetParticipantId: resolveId(ev.targetParticipantId),
+          emotionalScale: ev.emotionalScale,
+          isToxic: ev.isToxic,
+        })),
+        submittedAt: e.submittedAt,
+      })),
+      understandingContributions: meeting.understandingContributions.map((c) => ({
+        participant: resolveUserRef(c.participantId),
+        understandingScore: c.understandingScore,
+        contributions: c.contributions.map((contrib) => ({
+          participantId: resolveId(contrib.participantId),
+          contributionPercentage: contrib.contributionPercentage,
+        })),
+        submittedAt: c.submittedAt,
+      })),
+      taskEvaluations: meeting.taskEvaluations.map((e) => ({
+        participant: resolveUserRef(e.participantId),
+        evaluations: e.evaluations.map((ev) => ({
+          taskAuthorId: resolveId(ev.taskAuthorId),
+          importanceScore: ev.importanceScore,
+        })),
+        submittedAt: e.submittedAt,
+      })),
+      createdAt: meeting.createdAt,
+      updatedAt: meeting.updatedAt,
     };
   }
 }

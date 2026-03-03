@@ -207,7 +207,8 @@
             "schema": {
               "enum": [
                 "current",
-                "past"
+                "past",
+                "upcoming"
               ],
               "type": "string"
             }
@@ -515,7 +516,8 @@
     "/meetings/{id}/emotional-evaluations": {
       "post": {
         "operationId": "MeetingsController_submitEmotionalEvaluation",
-        "summary": "Отправить эмоциональную оценку (фаза emotional_evaluation, все участники включая создателя)",
+        "summary": "Отправить эмоциональную оценку (все участники включая создателя)",
+        "description": "\n      Отправить эмоциональные оценки других участников.\n      \n      ВАЖНО: Голосование полностью опциональное!\n      - Можно отправить пустой массив [] (не голосовать)\n      - Можно отправить оценку только для тех, кого хотите оценить\n      - Можно обновить оценку, отправив новую\n      - Создатель видит все оценки (включая пустые) в /all-submissions\n    ",
         "parameters": [
           {
             "name": "id",
@@ -539,7 +541,7 @@
         },
         "responses": {
           "201": {
-            "description": "Эмоциональная оценка отправлена",
+            "description": "Эмоциональная оценка отправлена (может быть пустой)",
             "content": {
               "application/json": {
                 "schema": {
@@ -547,9 +549,6 @@
                 }
               }
             }
-          },
-          "400": {
-            "description": "Встреча не в фазе emotional_evaluation"
           },
           "401": {
             "description": "Не авторизован"
@@ -568,7 +567,8 @@
     "/meetings/{id}/understanding-contributions": {
       "post": {
         "operationId": "MeetingsController_submitUnderstandingContribution",
-        "summary": "Отправить понимание и вклад (фаза understanding_contribution, все участники включая создателя)",
+        "summary": "Отправить понимание и вклад (все участники включая создателя)",
+        "description": "\n      Отправить самооценку понимания и распределение вклада участников.\n      \n      ВАЖНО: Голосование полностью опциональное!\n      - Можно отправить пустой массив contributions: [] (не голосовать)\n      - Можно отправить вклад только для тех, кого хотите оценить\n      - Проценты не обязаны суммироваться в 100%\n      - Можно обновить оценку, отправив новую\n      - Создатель видит все оценки (включая пустые) в /all-submissions\n    ",
         "parameters": [
           {
             "name": "id",
@@ -592,7 +592,7 @@
         },
         "responses": {
           "201": {
-            "description": "Понимание и вклад отправлены",
+            "description": "Понимание и вклад отправлены (может быть пустым)",
             "content": {
               "application/json": {
                 "schema": {
@@ -600,9 +600,6 @@
                 }
               }
             }
-          },
-          "400": {
-            "description": "Встреча не в фазе understanding_contribution"
           },
           "401": {
             "description": "Не авторизован"
@@ -674,7 +671,8 @@
     "/meetings/{id}/task-evaluations": {
       "post": {
         "operationId": "MeetingsController_submitTaskEvaluation",
-        "summary": "Отправить оценки важности задач (фаза task_evaluation, все участники включая создателя)",
+        "summary": "Отправить оценки важности задач (все участники включая создателя)",
+        "description": "\n      Отправить оценки важности задач.\n      \n      ВАЖНО: Голосование полностью опциональное!\n      - Можно отправить пустой массив [] (не голосовать)\n      - Можно отправить оценку только для тех задач, которые хотите оценить\n      - Можно обновить оценку, отправив новую\n      - Создатель видит все оценки (включая пустые) в /all-submissions\n    ",
         "parameters": [
           {
             "name": "id",
@@ -698,7 +696,7 @@
         },
         "responses": {
           "201": {
-            "description": "Оценки задач отправлены",
+            "description": "Оценки задач отправлены (может быть пустым)",
             "content": {
               "application/json": {
                 "schema": {
@@ -707,14 +705,8 @@
               }
             }
           },
-          "400": {
-            "description": "Встреча не в фазе task_evaluation или оценки уже отправлены"
-          },
           "401": {
             "description": "Не авторизован"
-          },
-          "403": {
-            "description": "Только участники и создатель могут отправлять оценки"
           }
         },
         "tags": [
@@ -838,6 +830,7 @@
       "get": {
         "operationId": "MeetingsController_getAllSubmissions",
         "summary": "Получить все ответы участников в упрощенном формате (только создатель)",
+        "description": "\n      Получить все ответы участников по всем фазам.\n      \n      ВАЖНО: Показывает все оценки, включая пустые!\n      - Участники могут не голосовать вообще (пустой массив [])\n      - Участники могут оценить только некоторых\n      - Создатель видит все оценки, даже пустые\n      - Если участник не оценил кого-то, этого не будет в списке evaluations\n      - Используйте для отслеживания прогресса голосования\n    ",
         "parameters": [
           {
             "name": "id",
@@ -851,7 +844,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Все ответы участников по всем фазам в упрощенном формате"
+            "description": "Все ответы участников (включая пустые оценки)"
           },
           "401": {
             "description": "Не авторизован"
@@ -1014,6 +1007,27 @@
           },
           "404": {
             "description": "Meeting not found"
+          }
+        },
+        "tags": [
+          "meetings"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/meetings/test/trigger-activation": {
+      "post": {
+        "operationId": "MeetingsController_testTriggerActivation",
+        "summary": "[TEST] Manually trigger meeting activation job",
+        "description": "\n      Test endpoint to manually trigger the meeting activation job.\n      \n      This is useful for testing the BullMQ queue and job processing locally.\n      \n      The job will check for meetings with status=UPCOMING and upcomingDate <= now,\n      and activate them.\n    ",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Job triggered successfully"
           }
         },
         "tags": [
@@ -1497,25 +1511,46 @@
           "upcomingDate"
         ]
       },
+      "MeetingParticipantRefDto": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439011"
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Jane Doe",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "example": "jane@example.com",
+            "nullable": true
+          }
+        },
+        "required": [
+          "_id",
+          "fullName",
+          "email"
+        ]
+      },
       "EmotionalEvaluationItemDto": {
         "type": "object",
         "properties": {
           "targetParticipantId": {
             "type": "string",
-            "example": "507f1f77bcf86cd799439012",
-            "description": "ID участника, которого оценивают"
+            "example": "507f1f77bcf86cd799439012"
           },
           "emotionalScale": {
             "type": "number",
             "example": 85,
             "minimum": -100,
-            "maximum": 100,
-            "description": "Эмоциональная оценка"
+            "maximum": 100
           },
           "isToxic": {
             "type": "boolean",
-            "example": false,
-            "description": "Флаг токсичности"
+            "example": false
           }
         },
         "required": [
@@ -1527,13 +1562,10 @@
       "EmotionalEvaluationDto": {
         "type": "object",
         "properties": {
-          "participantId": {
-            "type": "string",
-            "example": "507f1f77bcf86cd799439011",
-            "description": "ID участника, который оценивал"
+          "participant": {
+            "$ref": "#/components/schemas/MeetingParticipantRefDto"
           },
           "evaluations": {
-            "description": "Оценки других участников",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/EmotionalEvaluationItemDto"
@@ -1542,12 +1574,11 @@
           "submittedAt": {
             "format": "date-time",
             "type": "string",
-            "example": "2026-01-24T10:30:00.000Z",
-            "description": "Дата отправки"
+            "example": "2026-01-24T10:30:00.000Z"
           }
         },
         "required": [
-          "participantId",
+          "participant",
           "evaluations",
           "submittedAt"
         ]
@@ -1557,15 +1588,13 @@
         "properties": {
           "participantId": {
             "type": "string",
-            "example": "507f1f77bcf86cd799439012",
-            "description": "ID участника"
+            "example": "507f1f77bcf86cd799439012"
           },
           "contributionPercentage": {
             "type": "number",
             "example": 60,
             "minimum": 0,
-            "maximum": 100,
-            "description": "Процент вклада"
+            "maximum": 100
           }
         },
         "required": [
@@ -1576,20 +1605,16 @@
       "UnderstandingContributionDto": {
         "type": "object",
         "properties": {
-          "participantId": {
-            "type": "string",
-            "example": "507f1f77bcf86cd799439011",
-            "description": "ID участника"
+          "participant": {
+            "$ref": "#/components/schemas/MeetingParticipantRefDto"
           },
           "understandingScore": {
             "type": "number",
             "example": 90,
             "minimum": 0,
-            "maximum": 100,
-            "description": "Оценка понимания"
+            "maximum": 100
           },
           "contributions": {
-            "description": "Распределение вклада",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ContributionItemDto"
@@ -1598,61 +1623,13 @@
           "submittedAt": {
             "format": "date-time",
             "type": "string",
-            "example": "2026-01-24T11:00:00.000Z",
-            "description": "Дата отправки"
+            "example": "2026-01-24T11:00:00.000Z"
           }
         },
         "required": [
-          "participantId",
+          "participant",
           "understandingScore",
           "contributions",
-          "submittedAt"
-        ]
-      },
-      "TaskPlanningDto": {
-        "type": "object",
-        "properties": {
-          "participantId": {
-            "type": "string",
-            "example": "507f1f77bcf86cd799439011",
-            "description": "ID участника"
-          },
-          "taskDescription": {
-            "type": "string",
-            "example": "Implement authentication",
-            "description": "Описание задачи"
-          },
-          "commonQuestion": {
-            "type": "string",
-            "example": "How should we implement this?",
-            "description": "Общий вопрос задачи"
-          },
-          "deadline": {
-            "format": "date-time",
-            "type": "string",
-            "example": "2026-02-01T00:00:00.000Z",
-            "description": "Дедлайн"
-          },
-          "expectedContributionPercentage": {
-            "type": "number",
-            "example": 80,
-            "minimum": 0,
-            "maximum": 100,
-            "description": "Ожидаемый процент вклада"
-          },
-          "submittedAt": {
-            "format": "date-time",
-            "type": "string",
-            "example": "2026-01-24T11:30:00.000Z",
-            "description": "Дата отправки"
-          }
-        },
-        "required": [
-          "participantId",
-          "taskDescription",
-          "commonQuestion",
-          "deadline",
-          "expectedContributionPercentage",
           "submittedAt"
         ]
       },
@@ -1661,15 +1638,13 @@
         "properties": {
           "taskAuthorId": {
             "type": "string",
-            "example": "507f1f77bcf86cd799439011",
-            "description": "ID автора задачи"
+            "example": "507f1f77bcf86cd799439011"
           },
           "importanceScore": {
             "type": "number",
             "example": 75,
             "minimum": 0,
-            "maximum": 100,
-            "description": "Оценка важности задачи"
+            "maximum": 100
           }
         },
         "required": [
@@ -1680,13 +1655,10 @@
       "TaskEvaluationDto": {
         "type": "object",
         "properties": {
-          "participantId": {
-            "type": "string",
-            "example": "507f1f77bcf86cd799439011",
-            "description": "ID участника, отправившего оценки"
+          "participant": {
+            "$ref": "#/components/schemas/MeetingParticipantRefDto"
           },
           "evaluations": {
-            "description": "Массив оценок важности задач",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TaskImportanceEvaluationItemDto"
@@ -1695,12 +1667,11 @@
           "submittedAt": {
             "format": "date-time",
             "type": "string",
-            "example": "2026-01-24T12:00:00.000Z",
-            "description": "Дата отправки"
+            "example": "2026-01-24T12:00:00.000Z"
           }
         },
         "required": [
-          "participantId",
+          "participant",
           "evaluations",
           "submittedAt"
         ]
@@ -1714,36 +1685,28 @@
           },
           "title": {
             "type": "string",
-            "example": "Обсуждение нового проекта"
+            "example": "Q3 Planning Session"
           },
           "question": {
             "type": "string",
-            "example": "Какие технологии использовать?"
+            "example": "What are the priorities this quarter?"
           },
           "creatorId": {
-            "type": "string",
-            "example": "507f1f77bcf86cd799439011",
-            "description": "ID создателя встречи (строка)"
+            "$ref": "#/components/schemas/MeetingParticipantRefDto"
           },
           "participantIds": {
             "example": [
-              "507f1f77bcf86cd799439011",
-              "507f1f77bcf86cd799439012"
+              "507f1f77bcf86cd799439011"
             ],
-            "description": "Массив ID участников (строки)",
             "type": "array",
             "items": {
               "type": "string"
             }
           },
           "activeParticipantIds": {
-            "example": [
-              "507f1f77bcf86cd799439011"
-            ],
-            "description": "Массив ID активных участников, которые сейчас в комнате встречи",
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/MeetingParticipantRefDto"
             }
           },
           "currentPhase": {
@@ -1752,7 +1715,6 @@
               "emotional_evaluation",
               "understanding_contribution",
               "task_planning",
-              "task_evaluation",
               "finished"
             ],
             "example": "emotional_evaluation"
@@ -1767,28 +1729,18 @@
             "example": "upcoming"
           },
           "emotionalEvaluations": {
-            "description": "Эмоциональные оценки участников",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/EmotionalEvaluationDto"
             }
           },
           "understandingContributions": {
-            "description": "Понимание и вклад участников",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/UnderstandingContributionDto"
             }
           },
-          "taskPlannings": {
-            "description": "Планирование задач участников",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TaskPlanningDto"
-            }
-          },
           "taskEvaluations": {
-            "description": "Оценки важности задач участниками",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TaskEvaluationDto"
@@ -1816,7 +1768,6 @@
           "status",
           "emotionalEvaluations",
           "understandingContributions",
-          "taskPlannings",
           "taskEvaluations",
           "createdAt",
           "updatedAt"
@@ -1857,7 +1808,6 @@
               "emotional_evaluation",
               "understanding_contribution",
               "task_planning",
-              "task_evaluation",
               "finished"
             ],
             "example": "emotional_evaluation"
@@ -1898,7 +1848,8 @@
         "type": "object",
         "properties": {
           "evaluations": {
-            "description": "Эмоциональные оценки других участников",
+            "description": "Эмоциональные оценки других участников (можно отправить пустой массив - голосование полностью опциональное)",
+            "example": [],
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ParticipantEmotionalEvaluationDto"
@@ -1941,7 +1892,8 @@
             "maximum": 100
           },
           "contributions": {
-            "description": "Распределение вклада участников в обсуждение",
+            "description": "Распределение вклада участников в обсуждение (можно отправить пустой массив - голосование полностью опциональное)",
+            "example": [],
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ContributionInfluenceDto"
@@ -2011,17 +1963,8 @@
         "type": "object",
         "properties": {
           "evaluations": {
-            "description": "Массив оценок важности задач",
-            "example": [
-              {
-                "taskAuthorId": "507f1f77bcf86cd799439011",
-                "importanceScore": 85
-              },
-              {
-                "taskAuthorId": "507f1f77bcf86cd799439012",
-                "importanceScore": 60
-              }
-            ],
+            "description": "Массив оценок важности задач (можно отправить пустой массив - голосование полностью опциональное)",
+            "example": [],
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TaskImportanceEvaluationDto"
@@ -2032,12 +1975,56 @@
           "evaluations"
         ]
       },
+      "ParticipantStatDto": {
+        "type": "object",
+        "properties": {
+          "participant": {
+            "type": "object",
+            "properties": {
+              "_id": {
+                "type": "string"
+              },
+              "fullName": {
+                "type": "string",
+                "nullable": true
+              },
+              "email": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "understandingScore": {
+            "type": "number",
+            "example": 88
+          },
+          "averageEmotionalScale": {
+            "type": "number",
+            "example": 72.5
+          },
+          "toxicityFlags": {
+            "type": "number",
+            "example": 0
+          },
+          "averageContribution": {
+            "type": "number",
+            "example": 45
+          }
+        },
+        "required": [
+          "participant",
+          "understandingScore",
+          "averageEmotionalScale",
+          "toxicityFlags",
+          "averageContribution"
+        ]
+      },
       "StatisticsResponseDto": {
         "type": "object",
         "properties": {
           "question": {
             "type": "string",
-            "example": "Какие технологии использовать?"
+            "example": "What are the priorities this quarter?"
           },
           "avgUnderstanding": {
             "type": "number",
@@ -2046,32 +2033,7 @@
           "participantStats": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "participant": {
-                  "type": "object",
-                  "properties": {
-                    "_id": {
-                      "type": "string"
-                    },
-                    "fullName": {
-                      "type": "string"
-                    },
-                    "email": {
-                      "type": "string"
-                    }
-                  }
-                },
-                "understandingScore": {
-                  "type": "number"
-                },
-                "averageEmotionalScale": {
-                  "type": "number"
-                },
-                "toxicityFlags": {
-                  "type": "number"
-                }
-              }
+              "$ref": "#/components/schemas/ParticipantStatDto"
             }
           }
         },
@@ -2104,6 +2066,11 @@
             "description": "Дедлайн задачи (ISO формат)",
             "example": "2026-02-01T00:00:00.000Z"
           },
+          "estimateHours": {
+            "type": "number",
+            "description": "Оценить время на задачу",
+            "example": "2"
+          },
           "contributionImportance": {
             "type": "number",
             "description": "Важность вклада (0-100)",
@@ -2117,7 +2084,54 @@
           "commonQuestion",
           "meetingId",
           "deadline",
+          "estimateHours",
           "contributionImportance"
+        ]
+      },
+      "TaskAuthorRefDto": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439011"
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Jane Doe",
+            "nullable": true
+          },
+          "email": {
+            "type": "string",
+            "example": "jane@example.com",
+            "nullable": true
+          }
+        },
+        "required": [
+          "_id",
+          "fullName",
+          "email"
+        ]
+      },
+      "TaskMeetingRefDto": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439020"
+          },
+          "title": {
+            "type": "string",
+            "example": "Q3 Planning Session"
+          },
+          "question": {
+            "type": "string",
+            "example": "What are the priorities this quarter?"
+          }
+        },
+        "required": [
+          "_id",
+          "title",
+          "question"
         ]
       },
       "TaskResponseDto": {
@@ -2129,26 +2143,37 @@
           },
           "description": {
             "type": "string",
-            "example": "Реализовать аутентификацию пользователей"
+            "example": "Implement authentication module"
+          },
+          "commonQuestion": {
+            "type": "string",
+            "example": "How should we approach the tech stack?"
           },
           "authorId": {
-            "type": "string",
-            "example": "507f1f77bcf86cd799439011"
+            "$ref": "#/components/schemas/TaskAuthorRefDto"
           },
           "meetingId": {
-            "type": "string",
-            "example": "507f1f77bcf86cd799439020"
+            "$ref": "#/components/schemas/TaskMeetingRefDto"
           },
           "deadline": {
             "format": "date-time",
             "type": "string",
             "example": "2026-02-01T00:00:00.000Z"
           },
+          "estimateHours": {
+            "type": "number",
+            "example": 8,
+            "description": "Estimated hours to complete the task"
+          },
           "contributionImportance": {
             "type": "number",
-            "example": 90,
+            "example": 80,
             "minimum": 0,
             "maximum": 100
+          },
+          "approved": {
+            "type": "boolean",
+            "example": false
           },
           "isCompleted": {
             "type": "boolean",
@@ -2168,10 +2193,13 @@
         "required": [
           "_id",
           "description",
+          "commonQuestion",
           "authorId",
           "meetingId",
           "deadline",
+          "estimateHours",
           "contributionImportance",
+          "approved",
           "isCompleted",
           "createdAt",
           "updatedAt"
@@ -2190,6 +2218,11 @@
             "description": "Дедлайн задачи (ISO формат)",
             "example": "2026-02-15T00:00:00.000Z"
           },
+          "estimateHours": {
+            "type": "number",
+            "description": "Оценить время на задачу",
+            "example": "2"
+          },
           "contributionImportance": {
             "type": "number",
             "description": "Важность вклада (0-100)",
@@ -2202,7 +2235,10 @@
             "description": "Статус завершения задачи",
             "example": true
           }
-        }
+        },
+        "required": [
+          "estimateHours"
+        ]
       },
       "ApproveTaskDto": {
         "type": "object",

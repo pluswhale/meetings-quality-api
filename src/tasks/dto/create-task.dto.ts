@@ -35,6 +35,14 @@ export class CreateTaskDto {
   deadline: string;
 
   @ApiProperty({
+    description: 'Оценить время на задачу',
+    example: '2',
+  })
+  @IsNotEmpty()
+  @IsNumber()
+  estimateHours: number;
+
+  @ApiProperty({
     description: 'Важность вклада (0-100)',
     example: 90,
     minimum: 0,

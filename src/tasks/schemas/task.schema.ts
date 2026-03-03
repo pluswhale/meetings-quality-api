@@ -23,6 +23,9 @@ export class Task {
   @Prop({ required: true })
   deadline: Date;
 
+  @Prop({ required: true, default: 0 })
+  estimateHours: number;
+
   @Prop({ required: true, min: 0, max: 100 })
   contributionImportance: number;
 
