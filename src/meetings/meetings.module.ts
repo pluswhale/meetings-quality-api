@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { JwtModule } from '@nestjs/jwt';
 import { MeetingsController } from './meetings.controller';
@@ -11,6 +11,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
 import { MeetingStatusProcessor } from './workers/meeting-status.processor';
 import { MeetingStatusCron } from './workers/meeting-status.cron';
+import { ProjectsModule } from '../projects/projects.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { MeetingStatusCron } from './workers/meeting-status.cron';
     }),
     AuthModule,
     ConfigModule,
+    forwardRef(() => ProjectsModule),
   ],
   controllers: [MeetingsController],
   providers: [MeetingsService, MeetingsGateway, MeetingStatusProcessor, MeetingStatusCron],

@@ -46,21 +46,44 @@ export class TasksController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Получить все задачи текущего пользователя' })
+  @ApiOperation({
+    summary: 'Get tasks for the current user',
+    description:
+      'Returns tasks authored by the current user. ' +
+      'Supports optional filters: status (filter), project scope (projectId), ' +
+      'and keyword search on description (search).',
+  })
   @ApiQuery({
     name: 'filter',
     required: false,
     enum: ['current', 'past'],
-    description: 'Фильтр по статусу задачи',
+    description: 'Filter by completion status',
+  })
+  @ApiQuery({
+    name: 'projectId',
+    required: false,
+    type: String,
+    description: 'Scope results to a specific project',
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    type: String,
+    description: 'Case-insensitive keyword search on task description',
   })
   @ApiResponse({
     status: 200,
-    description: 'Список задач',
+    description: 'Task list',
     type: [TaskResponseDto],
   })
-  @ApiResponse({ status: 401, description: 'Не авторизован' })
-  findAll(@CurrentUser() user: any, @Query('filter') filter?: 'current' | 'past') {
-    return this.tasksService.findAll(user.userId, filter);
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  findAll(
+    @CurrentUser() user: any,
+    @Query('filter') filter?: 'current' | 'past',
+    @Query('projectId') projectId?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.tasksService.findAll(user.userId, filter, projectId, search);
   }
 
   @Get('meeting/:meetingId')

@@ -1,7 +1,16 @@
-import { IsNotEmpty, IsString, IsNumber, IsDateString, IsMongoId, Min, Max } from 'class-validator';
+import { IsNotEmpty, IsString, IsNumber, IsDateString, IsMongoId, IsOptional, Min, Max } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateTaskDto {
+  @ApiProperty({
+    description: 'Project this task belongs to',
+    example: '507f1f77bcf86cd799439050',
+    required: false,
+  })
+  @IsOptional()
+  @IsMongoId()
+  projectId?: string;
+
   @ApiProperty({
     description: 'Описание задачи',
     example: 'Реализовать аутентификацию пользователей',

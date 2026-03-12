@@ -53,21 +53,36 @@ export class MeetingsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Получить все встречи текущего пользователя' })
+  @ApiOperation({
+    summary: 'Get meetings for the current user',
+    description:
+      'Returns meetings where the user is a participant. ' +
+      'Optionally scope to a specific project with ?projectId=.',
+  })
   @ApiQuery({
     name: 'filter',
     required: false,
     enum: ['current', 'past', 'upcoming'],
-    description: 'Фильтр по статусу встречи',
+    description: 'Filter by meeting status',
+  })
+  @ApiQuery({
+    name: 'projectId',
+    required: false,
+    type: String,
+    description: 'Scope results to a specific project',
   })
   @ApiResponse({
     status: 200,
-    description: 'Список встреч',
+    description: 'Meeting list',
     type: [MeetingResponseDto],
   })
-  @ApiResponse({ status: 401, description: 'Не авторизован' })
-  findAll(@CurrentUser() user: any, @Query('filter') filter?: 'current' | 'past' | 'upcoming') {
-    return this.meetingsService.findAll(user.userId, filter);
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  findAll(
+    @CurrentUser() user: any,
+    @Query('filter') filter?: 'current' | 'past' | 'upcoming',
+    @Query('projectId') projectId?: string,
+  ) {
+    return this.meetingsService.findAll(user.userId, filter, projectId);
   }
 
   @Get(':id')

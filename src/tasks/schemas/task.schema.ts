@@ -5,6 +5,14 @@ export type TaskDocument = Task & Document;
 
 @Schema({ timestamps: true })
 export class Task {
+  /**
+   * The Project this task belongs to.
+   * Required on all new tasks; used for project-scoped queries and
+   * access control (only project participants may view/modify tasks).
+   */
+  @Prop({ type: Types.ObjectId, ref: 'Project', required: false, index: true })
+  projectId: Types.ObjectId;
+
   @Prop({ required: true })
   description: string;
 
@@ -39,4 +47,6 @@ export class Task {
   updatedAt: Date;
 }
 
-export const TaskSchema = SchemaFactory.createForClass(Task);
+export const TaskSchema = SchemaFactory.createForClass(Task)
+  .index({ projectId: 1, authorId: 1 })
+  .index({ projectId: 1, meetingId: 1 });

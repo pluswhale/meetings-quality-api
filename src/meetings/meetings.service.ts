@@ -73,6 +73,8 @@ interface TaskLeanDoc {
  */
 interface MeetingStatusFilter {
   status?: MeetingStatus | { $in: MeetingStatus[] };
+  projectId?: Types.ObjectId;
+  participantIds?: Types.ObjectId;
 }
 
 // ─── Module-level pure helpers ─────────────────────────────────────────────────
@@ -171,6 +173,9 @@ export class MeetingsService {
       currentPhase: MeetingPhase.EMOTIONAL_EVALUATION,
       status,
       upcomingDate,
+      ...(createMeetingDto.projectId && {
+        projectId: new Types.ObjectId(createMeetingDto.projectId),
+      }),
     }).save();
 
     return this.transformMeetingResponse(saved);
@@ -179,13 +184,26 @@ export class MeetingsService {
   async findAll(
     userId: string,
     filter?: 'current' | 'past' | 'upcoming',
+    projectId?: string,
   ): Promise<MeetingResponseDto[]> {
-    void userId;
-
     const query: MeetingStatusFilter = {};
+
     if (filter === 'current') query.status = { $in: [MeetingStatus.ACTIVE] };
     else if (filter === 'past') query.status = MeetingStatus.FINISHED;
     else if (filter === 'upcoming') query.status = { $in: [MeetingStatus.UPCOMING] };
+
+    if (projectId) {
+      if (!Types.ObjectId.isValid(projectId)) {
+        throw new BadRequestException('Invalid project ID');
+      }
+      // Scoped to the project — participant guard is delegated to the project
+      // access check that callers perform before invoking this method.
+      query.projectId = new Types.ObjectId(projectId);
+    } else {
+      // Without a project scope, restrict to meetings where the caller is a
+      // participant so users cannot enumerate all meetings in the system.
+      query.participantIds = new Types.ObjectId(userId);
+    }
 
     const meetings = await this.meetingModel
       .find(query)

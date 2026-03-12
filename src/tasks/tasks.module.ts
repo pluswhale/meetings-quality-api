@@ -5,12 +5,14 @@ import { TasksService } from './tasks.service';
 import { Task, TaskSchema } from './schemas/task.schema';
 import { Meeting, MeetingSchema } from 'src/meetings/schemas/meeting.schema';
 import { MeetingsModule } from 'src/meetings/meetings.module';
+import { ProjectsModule } from 'src/projects/projects.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Task.name, schema: TaskSchema }]),
     MongooseModule.forFeature([{ name: Meeting.name, schema: MeetingSchema }]),
     forwardRef(() => MeetingsModule),
+    forwardRef(() => ProjectsModule),
   ],
   controllers: [TasksController],
   providers: [TasksService],

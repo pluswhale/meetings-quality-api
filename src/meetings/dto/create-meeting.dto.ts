@@ -1,7 +1,16 @@
-import { IsNotEmpty, IsString, IsArray, IsOptional } from 'class-validator';
+import { IsNotEmpty, IsString, IsArray, IsOptional, IsMongoId } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateMeetingDto {
+  @ApiProperty({
+    description: 'Project this meeting belongs to',
+    example: '507f1f77bcf86cd799439050',
+    required: false,
+  })
+  @IsOptional()
+  @IsMongoId()
+  projectId?: string;
+
   @ApiProperty({
     description: 'Название встречи',
     example: 'Обсуждение нового проекта',

@@ -148,6 +148,14 @@ export type MeetingDocument = Meeting & Document;
 
 @Schema({ timestamps: true })
 export class Meeting {
+  /**
+   * The Project this meeting belongs to.
+   * Every new meeting must be created within a project.
+   * Access to a meeting is derived from the parent project's participantIds.
+   */
+  @Prop({ type: Types.ObjectId, ref: 'Project', required: false, index: true })
+  projectId: Types.ObjectId;
+
   @Prop({ required: true })
   title: string;
 
@@ -201,7 +209,6 @@ export class Meeting {
   updatedAt: Date;
 }
 
-export const MeetingSchema = SchemaFactory.createForClass(Meeting).index({
-  status: 1,
-  upcomingDate: 1,
-});
+export const MeetingSchema = SchemaFactory.createForClass(Meeting)
+  .index({ status: 1, upcomingDate: 1 })
+  .index({ projectId: 1, status: 1 });

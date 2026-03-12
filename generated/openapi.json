@@ -156,6 +156,225 @@
         ]
       }
     },
+    "/projects": {
+      "post": {
+        "operationId": "ProjectsController_create",
+        "summary": "Create a new project",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Project created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "tags": [
+          "projects"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "get": {
+        "operationId": "ProjectsController_findAll",
+        "summary": "List projects visible to the current user",
+        "description": "Returns all projects where the current user is a participant. Optional filters: status, search (matches title, goal, description).",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Filter by project status",
+            "schema": {
+              "enum": [
+                "current",
+                "archived"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive keyword search across title, goal, and description",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProjectResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "projects"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
+    "/projects/{id}": {
+      "get": {
+        "operationId": "ProjectsController_findOne",
+        "summary": "Get project details including meeting and task counts",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Project ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project detail with aggregate counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDetailResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a project participant"
+          },
+          "404": {
+            "description": "Project not found"
+          }
+        },
+        "tags": [
+          "projects"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "ProjectsController_update",
+        "summary": "Update project (creator only)",
+        "description": "Editable fields: title, goal, description, participantIds, status. The creator is always preserved in participantIds regardless of the payload.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Project ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProjectDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Project updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only the project creator can update it"
+          }
+        },
+        "tags": [
+          "projects"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "ProjectsController_remove",
+        "summary": "Delete project (creator only)",
+        "description": "Permanently deletes the project and cascade-deletes all associated meetings and tasks.",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Project ID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Project deleted"
+          },
+          "403": {
+            "description": "Only the project creator can delete it"
+          }
+        },
+        "tags": [
+          "projects"
+        ],
+        "security": [
+          {
+            "JWT-auth": []
+          }
+        ]
+      }
+    },
     "/meetings": {
       "post": {
         "operationId": "MeetingsController_create",
@@ -197,13 +416,14 @@
       },
       "get": {
         "operationId": "MeetingsController_findAll",
-        "summary": "Получить все встречи текущего пользователя",
+        "summary": "Get meetings for the current user",
+        "description": "Returns meetings where the user is a participant. Optionally scope to a specific project with ?projectId=.",
         "parameters": [
           {
             "name": "filter",
             "required": false,
             "in": "query",
-            "description": "Фильтр по статусу встречи",
+            "description": "Filter by meeting status",
             "schema": {
               "enum": [
                 "current",
@@ -212,11 +432,20 @@
               ],
               "type": "string"
             }
+          },
+          {
+            "name": "projectId",
+            "required": false,
+            "in": "query",
+            "description": "Scope results to a specific project",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Список встреч",
+            "description": "Meeting list",
             "content": {
               "application/json": {
                 "schema": {
@@ -229,7 +458,7 @@
             }
           },
           "401": {
-            "description": "Не авторизован"
+            "description": "Unauthorized"
           }
         },
         "tags": [
@@ -1084,13 +1313,14 @@
       },
       "get": {
         "operationId": "TasksController_findAll",
-        "summary": "Получить все задачи текущего пользователя",
+        "summary": "Get tasks for the current user",
+        "description": "Returns tasks authored by the current user. Supports optional filters: status (filter), project scope (projectId), and keyword search on description (search).",
         "parameters": [
           {
             "name": "filter",
             "required": false,
             "in": "query",
-            "description": "Фильтр по статусу задачи",
+            "description": "Filter by completion status",
             "schema": {
               "enum": [
                 "current",
@@ -1098,11 +1328,29 @@
               ],
               "type": "string"
             }
+          },
+          {
+            "name": "projectId",
+            "required": false,
+            "in": "query",
+            "description": "Scope results to a specific project",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive keyword search on task description",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "Список задач",
+            "description": "Task list",
             "content": {
               "application/json": {
                 "schema": {
@@ -1115,7 +1363,7 @@
             }
           },
           "401": {
-            "description": "Не авторизован"
+            "description": "Unauthorized"
           }
         },
         "tags": [
@@ -1475,9 +1723,235 @@
           "password"
         ]
       },
+      "CreateProjectDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Project title",
+            "example": "Q3 Infrastructure Upgrade"
+          },
+          "goal": {
+            "type": "string",
+            "description": "High-level goal for this project",
+            "example": "Migrate all services to Kubernetes by end of Q3"
+          },
+          "description": {
+            "type": "string",
+            "description": "Detailed description of the project scope",
+            "example": "Covers backend, frontend and monitoring stack migration"
+          },
+          "participantIds": {
+            "description": "User IDs to invite as participants (creator is added automatically)",
+            "example": [
+              "507f1f77bcf86cd799439011",
+              "507f1f77bcf86cd799439012"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "ProjectParticipantRefDto": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439011"
+          },
+          "fullName": {
+            "type": "string",
+            "example": "Jane Doe"
+          },
+          "email": {
+            "type": "string",
+            "example": "jane@example.com"
+          }
+        },
+        "required": [
+          "_id",
+          "fullName",
+          "email"
+        ]
+      },
+      "ProjectResponseDto": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439050"
+          },
+          "title": {
+            "type": "string",
+            "example": "Q3 Infrastructure Upgrade"
+          },
+          "goal": {
+            "type": "string",
+            "example": "Migrate all services to Kubernetes"
+          },
+          "description": {
+            "type": "string",
+            "example": "Covers backend, frontend and monitoring stack"
+          },
+          "creatorId": {
+            "$ref": "#/components/schemas/ProjectParticipantRefDto"
+          },
+          "participantIds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectParticipantRefDto"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "archived"
+            ],
+            "example": "current"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-01-19T10:00:00.000Z"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-01-19T10:00:00.000Z"
+          }
+        },
+        "required": [
+          "_id",
+          "title",
+          "goal",
+          "description",
+          "creatorId",
+          "participantIds",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ProjectDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439050"
+          },
+          "title": {
+            "type": "string",
+            "example": "Q3 Infrastructure Upgrade"
+          },
+          "goal": {
+            "type": "string",
+            "example": "Migrate all services to Kubernetes"
+          },
+          "description": {
+            "type": "string",
+            "example": "Covers backend, frontend and monitoring stack"
+          },
+          "creatorId": {
+            "$ref": "#/components/schemas/ProjectParticipantRefDto"
+          },
+          "participantIds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProjectParticipantRefDto"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "archived"
+            ],
+            "example": "current"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-01-19T10:00:00.000Z"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-01-19T10:00:00.000Z"
+          },
+          "meetingCount": {
+            "type": "number",
+            "example": 5,
+            "description": "Total meetings under this project"
+          },
+          "taskCount": {
+            "type": "number",
+            "example": 12,
+            "description": "Total tasks under this project"
+          }
+        },
+        "required": [
+          "_id",
+          "title",
+          "goal",
+          "description",
+          "creatorId",
+          "participantIds",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "meetingCount",
+          "taskCount"
+        ]
+      },
+      "UpdateProjectDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "Q3 Infrastructure Upgrade (revised)"
+          },
+          "goal": {
+            "type": "string",
+            "example": "Updated goal description"
+          },
+          "description": {
+            "type": "string",
+            "example": "Updated scope description"
+          },
+          "participantIds": {
+            "example": [
+              "507f1f77bcf86cd799439011"
+            ],
+            "description": "Replaces the full participant list. Creator is always preserved.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "archived"
+            ],
+            "example": "archived"
+          }
+        }
+      },
       "CreateMeetingDto": {
         "type": "object",
         "properties": {
+          "projectId": {
+            "type": "string",
+            "description": "Project this meeting belongs to",
+            "example": "507f1f77bcf86cd799439050"
+          },
           "title": {
             "type": "string",
             "description": "Название встречи",
@@ -2046,6 +2520,11 @@
       "CreateTaskDto": {
         "type": "object",
         "properties": {
+          "projectId": {
+            "type": "string",
+            "description": "Project this task belongs to",
+            "example": "507f1f77bcf86cd799439050"
+          },
           "description": {
             "type": "string",
             "description": "Описание задачи",
