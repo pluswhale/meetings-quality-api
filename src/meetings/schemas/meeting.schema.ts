@@ -2,6 +2,7 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
 export enum MeetingPhase {
+  RETROSPECTIVE = 'retrospective',
   EMOTIONAL_EVALUATION = 'emotional_evaluation',
   UNDERSTANDING_CONTRIBUTION = 'understanding_contribution',
   TASK_PLANNING = 'task_planning',
@@ -155,6 +156,13 @@ export class Meeting {
    */
   @Prop({ type: Types.ObjectId, ref: 'Project', required: false, index: true })
   projectId: Types.ObjectId;
+
+  /**
+   * Link to the predecessor meeting. When set, Phase 0 (Retrospective) is
+   * injected at the start so participants review their previous commitments.
+   */
+  @Prop({ type: Types.ObjectId, ref: 'Meeting', required: false, index: true, default: null })
+  previousMeetingId: Types.ObjectId | null;
 
   @Prop({ required: true })
   title: string;

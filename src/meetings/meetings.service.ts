@@ -74,7 +74,7 @@ interface TaskLeanDoc {
 interface MeetingStatusFilter {
   status?: MeetingStatus | { $in: MeetingStatus[] };
   projectId?: Types.ObjectId;
-  participantIds?: Types.ObjectId;
+  $or?: Array<{ creatorId?: Types.ObjectId; participantIds?: Types.ObjectId }>;
 }
 
 // ─── Module-level pure helpers ─────────────────────────────────────────────────
@@ -165,16 +165,23 @@ export class MeetingsService {
     const status: MeetingStatus =
       upcomingDate > now ? MeetingStatus.UPCOMING : MeetingStatus.ACTIVE;
 
+    const hasPreviousMeeting = Boolean(createMeetingDto.previousMeetingId);
+
     const saved = await new this.meetingModel({
       title: createMeetingDto.title,
       question: createMeetingDto.question,
       creatorId: creatorObjectId,
       participantIds,
-      currentPhase: MeetingPhase.EMOTIONAL_EVALUATION,
+      currentPhase: hasPreviousMeeting
+        ? MeetingPhase.RETROSPECTIVE
+        : MeetingPhase.EMOTIONAL_EVALUATION,
       status,
       upcomingDate,
       ...(createMeetingDto.projectId && {
         projectId: new Types.ObjectId(createMeetingDto.projectId),
+      }),
+      ...(hasPreviousMeeting && {
+        previousMeetingId: new Types.ObjectId(createMeetingDto.previousMeetingId!),
       }),
     }).save();
 
@@ -200,9 +207,13 @@ export class MeetingsService {
       // access check that callers perform before invoking this method.
       query.projectId = new Types.ObjectId(projectId);
     } else {
-      // Without a project scope, restrict to meetings where the caller is a
-      // participant so users cannot enumerate all meetings in the system.
-      query.participantIds = new Types.ObjectId(userId);
+      // Return meetings where the caller is the creator OR an invited participant.
+      // Creators are typically also in participantIds, but the $or handles edge
+      // cases (e.g. meetings created before that rule was enforced).
+      query.$or = [
+        { creatorId: new Types.ObjectId(userId) },
+        { participantIds: new Types.ObjectId(userId) },
+      ];
     }
 
     const meetings = await this.meetingModel
@@ -491,7 +502,7 @@ export class MeetingsService {
 
   async getActiveParticipants(id: string, _userId: string): Promise<Record<string, unknown>> {
     const meeting = await this.findOneInternal(id);
-    const socketParticipants = this.meetingsGateway.getActiveParticipants(id);
+    const socketParticipants = await this.meetingsGateway.getActiveParticipants(id);
 
     const activeParticipants = socketParticipants.map((p) => ({
       _id: p.userId,
@@ -682,7 +693,7 @@ export class MeetingsService {
     const meeting = await this.findOneInternal(id);
     this.assertCreator(meeting, userId);
 
-    const socketParticipants = this.meetingsGateway.getActiveParticipants(id);
+    const socketParticipants = await this.meetingsGateway.getActiveParticipants(id);
 
     const activeParticipants = socketParticipants.map((p) => ({
       _id: p.userId,
@@ -1031,7 +1042,7 @@ export class MeetingsService {
     const meeting = await this.findOneInternal(meetingId);
     this.assertCreator(meeting, userId);
 
-    const activeParticipants = this.meetingsGateway.getActiveParticipants(meetingId);
+    const activeParticipants = await this.meetingsGateway.getActiveParticipants(meetingId);
     const submittedIds = await this.getSubmittedIdsForPhase(
       meetingId,
       meeting.currentPhase,
@@ -1136,6 +1147,8 @@ export class MeetingsService {
         })),
         submittedAt: e.submittedAt,
       })),
+      previousMeetingId: meeting.previousMeetingId?.toString() ?? null,
+      hasRetrospectivePhase: Boolean(meeting.previousMeetingId),
       createdAt: meeting.createdAt,
       updatedAt: meeting.updatedAt,
     };

@@ -40,6 +40,19 @@ export class Task {
   @Prop({ default: false })
   isCompleted: boolean;
 
+  /**
+   * Phase 0 (Retrospective) fields — populated when the next meeting reviews
+   * this task as a previous commitment.
+   */
+  @Prop({ type: String, enum: ['completed', 'incomplete', 'pending'], default: 'pending' })
+  retroStatus: 'completed' | 'incomplete' | 'pending';
+
+  @Prop({ required: false, default: null })
+  statusNote: string | null;
+
+  @Prop({ required: false, default: null })
+  retroReviewedAt: Date | null;
+
   @Prop({ default: Date.now })
   createdAt: Date;
 

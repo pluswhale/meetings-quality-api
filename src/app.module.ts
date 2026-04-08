@@ -10,6 +10,7 @@ import { MeetingsModule } from './meetings/meetings.module';
 import { TasksModule } from './tasks/tasks.module';
 import { ProjectsModule } from './projects/projects.module';
 import { HealthController } from './health.controller';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { HealthController } from './health.controller';
       }),
     }),
 
+    RedisModule,
     AuthModule,
     UsersModule,
     ProjectsModule,

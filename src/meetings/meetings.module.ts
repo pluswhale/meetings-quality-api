@@ -4,6 +4,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { MeetingsController } from './meetings.controller';
 import { MeetingsService } from './meetings.service';
 import { MeetingsGateway } from './meetings.gateway';
+import { MeetingsRedisService } from './meetings.redis.service';
+import { MeetingsFlushService } from './meetings.flush.service';
 import { Meeting, MeetingSchema } from './schemas/meeting.schema';
 import { Task, TaskSchema } from '../tasks/schemas/task.schema';
 import { AuthModule } from 'src/auth/auth.module';
@@ -12,12 +14,11 @@ import { BullModule } from '@nestjs/bullmq';
 import { MeetingStatusProcessor } from './workers/meeting-status.processor';
 import { MeetingStatusCron } from './workers/meeting-status.cron';
 import { ProjectsModule } from '../projects/projects.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
-    BullModule.registerQueue({
-      name: 'meeting-status',
-    }),
+    BullModule.registerQueue({ name: 'meeting-status' }),
     MongooseModule.forFeature([
       { name: Meeting.name, schema: MeetingSchema },
       { name: Task.name, schema: TaskSchema },
@@ -32,10 +33,18 @@ import { ProjectsModule } from '../projects/projects.module';
     }),
     AuthModule,
     ConfigModule,
+    UsersModule,
     forwardRef(() => ProjectsModule),
   ],
   controllers: [MeetingsController],
-  providers: [MeetingsService, MeetingsGateway, MeetingStatusProcessor, MeetingStatusCron],
+  providers: [
+    MeetingsService,
+    MeetingsGateway,
+    MeetingsRedisService,
+    MeetingsFlushService,
+    MeetingStatusProcessor,
+    MeetingStatusCron,
+  ],
   exports: [MeetingsService, MeetingsGateway],
 })
 export class MeetingsModule {}

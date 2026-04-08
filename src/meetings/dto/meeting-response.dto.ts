@@ -140,6 +140,12 @@ export class MeetingResponseDto {
   @ApiProperty({ type: [TaskEvaluationDto] })
   taskEvaluations: TaskEvaluationDto[];
 
+  @ApiProperty({ example: '507f1f77bcf86cd799439030', nullable: true })
+  previousMeetingId: string | null;
+
+  @ApiProperty({ example: true })
+  hasRetrospectivePhase: boolean;
+
   @ApiProperty({ example: '2026-01-19T10:00:00.000Z' })
   createdAt: Date;
 

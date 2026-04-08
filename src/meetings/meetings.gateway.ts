@@ -6,13 +6,23 @@ import {
   OnGatewayDisconnect,
   ConnectedSocket,
   MessageBody,
+  WsException,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger } from '@nestjs/common';
+import { Logger, UsePipes, ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { Meeting, MeetingDocument } from './schemas/meeting.schema';
+import { Model, Types } from 'mongoose';
+
+import { Meeting, MeetingDocument, MeetingPhase, MeetingStatus } from './schemas/meeting.schema';
+import { Task, TaskDocument } from '../tasks/schemas/task.schema';
+import { MeetingsRedisService, RetroTaskStatus } from './meetings.redis.service';
+import { MeetingsFlushService } from './meetings.flush.service';
+import { UsersService } from '../users/users.service';
+import { WsRetroStatusDto } from './dto/ws-retro-status.dto';
+import { WsAdvancePhaseDto, WsApproveTaskDto, WsFinishMeetingDto } from './dto/ws-advance-phase.dto';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -20,210 +30,615 @@ interface AuthenticatedSocket extends Socket {
   userFullName?: string;
 }
 
-interface MeetingParticipant {
-  userId: string;
-  fullName: string | null;
-  email: string | null;
-  socketId: string;
-  joinedAt: Date;
-  lastSeen: Date;
+/**
+ * Resolves a populated-or-raw ObjectId field to a string.
+ * Avoids the scattered `(field as any)?._id || field` anti-pattern.
+ */
+function resolveId(field: unknown): string {
+  if (field && typeof field === 'object' && '_id' in field) {
+    return String((field as { _id: unknown })._id);
+  }
+  return String(field);
 }
 
+@UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 @WebSocketGateway({
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
+  cors: { origin: '*', methods: ['GET', 'POST'], credentials: true },
   transports: ['websocket', 'polling'],
 })
 export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  @WebSocketServer()
-  server: Server;
-
+  @WebSocketServer() server: Server;
   private readonly logger = new Logger(MeetingsGateway.name);
 
-  // In-memory storage of active participants per meeting
-  private activeParticipants: Map<string, Map<string, MeetingParticipant>> = new Map();
-  // Socket ID to user mapping for disconnect handling
-  private socketToUser: Map<string, { userId: string; meetingId: string }> = new Map();
+  /** Maps socketId → { userId, meetingId } for disconnect cleanup. */
+  private readonly socketMeta = new Map<string, { userId: string; meetingId: string }>();
 
   constructor(
-    private jwtService: JwtService,
-    @InjectModel(Meeting.name) private meetingModel: Model<MeetingDocument>,
+    private readonly jwtService: JwtService,
+    private readonly redisService: MeetingsRedisService,
+    private readonly flushService: MeetingsFlushService,
+    private readonly usersService: UsersService,
+    @InjectModel(Meeting.name) private readonly meetingModel: Model<MeetingDocument>,
+    @InjectModel(Task.name) private readonly taskModel: Model<TaskDocument>,
   ) {}
+
+  // ─── Connection lifecycle ──────────────────────────────────────────────────
 
   async handleConnection(client: AuthenticatedSocket) {
     try {
-      let rawToken =
+      let raw =
         client.handshake.auth?.token ||
         client.handshake.headers?.authorization ||
         client.handshake.query?.token;
 
-      if (!rawToken) {
-        this.logger.warn(`[CONNECTION] ❌ Client ${client.id} missing token. Disconnecting.`);
+      if (!raw) {
+        this.emit(client, 'error:unauthorized', { message: 'Token missing', code: 'NO_TOKEN' });
         client.disconnect();
         return;
       }
 
-      if (Array.isArray(rawToken)) rawToken = rawToken[0];
-
-      const token = String(rawToken)
-        .replace(/^Bearer\s+/i, '')
-        .trim();
-
+      if (Array.isArray(raw)) raw = raw[0];
+      const token = String(raw).replace(/^Bearer\s+/i, '').trim();
       const payload = await this.jwtService.verifyAsync(token);
 
       client.userId = payload.userId || payload.sub;
       client.userEmail = payload.email;
-      client.userFullName = payload.fullName;
 
-      this.logger.log(`[CONNECTION] ✅ Auth success: ${client.id} | User: ${client.userId}`);
-    } catch (error) {
-      this.logger.error(`[CONNECTION] ❌ Auth Failed for ${client.id}`);
-      client.emit('auth_error', {
-        message: 'Authentication failed',
-        code: error.name || 'UnknownError',
-      });
+      // fullName was added to JWT in a later version. Fall back to a DB lookup
+      // for clients holding an older token that lacks the field.
+      if (payload.fullName) {
+        client.userFullName = payload.fullName;
+      } else {
+        try {
+          const user = await this.usersService.findById(client.userId!);
+          client.userFullName = (user as { fullName?: string }).fullName ?? null;
+        } catch {
+          client.userFullName = null;
+        }
+      }
+
+      this.logger.log(`[CONNECT] ${client.id} | User: ${client.userId} | Name: ${client.userFullName}`);
+    } catch {
+      this.emit(client, 'error:unauthorized', { message: 'Invalid token', code: 'INVALID_TOKEN' });
       client.disconnect();
     }
   }
 
   async handleDisconnect(client: AuthenticatedSocket) {
-    if (client.userId) {
-      this.logger.log(`[DISCONNECT] User ${client.userId} disconnected (${client.id})`);
+    const meta = this.socketMeta.get(client.id);
+    if (!meta) return;
+
+    const { userId, meetingId } = meta;
+    this.socketMeta.delete(client.id);
+
+    await this.redisService.removeParticipant(meetingId, userId);
+
+    const participants = await this.redisService.getParticipants(meetingId);
+    const room = roomName(meetingId);
+
+    this.server.to(room).emit('room:participants_updated', { meetingId, participants });
+
+    const state = await this.redisService.getHotState(meetingId);
+    if (state) {
+      const pending = await this.redisService.getPendingParticipants(meetingId, state.phase);
+      const submitted = await this.redisService.getSubmittedIds(meetingId, state.phase);
+      this.server.to(room).emit('room:pending_voters_updated', {
+        meetingId,
+        phase: state.phase,
+        pending,
+        submitted,
+      });
     }
 
-    const userInfo = this.socketToUser.get(client.id);
-
-    if (userInfo) {
-      const { userId, meetingId } = userInfo;
-      await this.removeParticipant(meetingId, userId, client.id);
-      this.socketToUser.delete(client.id);
-    }
+    this.logger.log(`[DISCONNECT] ${userId} left ${meetingId}`);
   }
 
-  @SubscribeMessage('join_meeting')
-  async handleJoinMeeting(
+  // ─── room:join ─────────────────────────────────────────────────────────────
+
+  @SubscribeMessage('room:join')
+  async handleJoinRoom(
     @ConnectedSocket() client: AuthenticatedSocket,
     @MessageBody() data: { meetingId: string },
   ) {
-    if (!client.userId) {
-      client.emit('auth_error', { message: 'Not authenticated' });
-      client.disconnect();
-      return { success: false, error: 'Not authenticated' };
+    const userId = this.requireAuth(client);
+    const { meetingId } = data;
+
+    if (!meetingId || !Types.ObjectId.isValid(meetingId)) {
+      return this.ack(false, 'Invalid meetingId');
     }
 
-    const { meetingId } = data;
-    const userId = client.userId;
+    const meeting = await this.meetingModel
+      .findById(meetingId)
+      .select('participantIds creatorId status currentPhase previousMeetingId projectId')
+      .lean<{
+        participantIds: Types.ObjectId[];
+        creatorId: Types.ObjectId;
+        status: MeetingStatus;
+        currentPhase: MeetingPhase;
+        previousMeetingId: Types.ObjectId | null;
+        projectId: Types.ObjectId | null;
+      }>()
+      .exec();
 
-    this.logger.log(`[JOIN] User ${userId} joining meeting ${meetingId}`);
+    if (!meeting) return this.ack(false, 'Meeting not found');
 
-    try {
-      if (!meetingId) return { success: false, error: 'Meeting ID required' };
+    const isCreatorJoining = resolveId(meeting.creatorId) === userId;
+    // Guard against documents where participantIds is missing (legacy data).
+    const participantIds: Types.ObjectId[] = meeting.participantIds ?? [];
+    const alreadyParticipant =
+      isCreatorJoining ||
+      participantIds.some((id) => resolveId(id) === userId);
 
-      const roomName = `meeting-${meetingId}`;
-      client.join(roomName);
+    // Auto-register: any authenticated user who joins the room is added as a
+    // participant in MongoDB so they appear in the participants list.
+    if (!alreadyParticipant) {
+      await this.meetingModel.findByIdAndUpdate(meetingId, {
+        $addToSet: { participantIds: new Types.ObjectId(userId) },
+      });
+      this.logger.log(
+        `[JOIN] Auto-added ${userId} to participantIds for meeting ${meetingId}`,
+      );
+    }
 
-      const participantData: MeetingParticipant = {
-        userId,
-        fullName: client.userFullName || 'Unknown',
-        email: client.userEmail || 'Unknown',
-        socketId: client.id,
-        joinedAt: new Date(),
-        lastSeen: new Date(),
+    const room = roomName(meetingId);
+    client.join(room);
+
+    // ── Initialise / refresh Redis state ────────────────────────────────────
+    let hotState = await this.redisService.getHotState(meetingId);
+
+    if (!hotState) {
+      // First join after server restart — reconstruct from MongoDB
+      await this.redisService.setHotState(meetingId, meeting.currentPhase, meeting.status);
+      hotState = { phase: meeting.currentPhase, status: meeting.status, previousPhase: null, startedAt: new Date().toISOString() };
+    }
+
+    // ── Register participant ──────────────────────────────────────────────────
+    const now = new Date().toISOString();
+    await this.redisService.addParticipant(meetingId, {
+      userId,
+      fullName: client.userFullName ?? null,
+      email: client.userEmail ?? null,
+      socketId: client.id,
+      joinedAt: now,
+      lastSeen: now,
+    });
+
+    this.socketMeta.set(client.id, { userId, meetingId });
+
+    // ── Always refresh creator socket on every join so reconnects work ───────
+    if (isCreatorJoining) {
+      await this.redisService.setCreatorSocket(meetingId, client.id);
+    }
+
+    // ── Build state-sync payload ─────────────────────────────────────────────
+    // All users receive current votes so the live panel hydrates on join/reconnect.
+    const [participants, submittedIds, myDraft, retroStatuses, currentVotes] = await Promise.all([
+      this.redisService.getParticipants(meetingId),
+      this.redisService.getSubmittedIds(meetingId, hotState.phase),
+      this.redisService.getDraft(meetingId, hotState.phase, userId),
+      meeting.previousMeetingId
+        ? this.redisService.getAllRetroStatuses(meetingId)
+        : Promise.resolve([] as RetroTaskStatus[]),
+      this.redisService.getAllVotes<Record<string, unknown>>(meetingId, hotState.phase as MeetingPhase),
+    ]);
+
+    const pendingIds = new Set(submittedIds);
+    const pendingUserIds = participants
+      .filter((p) => !pendingIds.has(p.userId))
+      .map((p) => p.userId);
+
+    // Fetch retro tasks from the previous meeting.
+    // Creator receives ALL tasks so they can monitor progress.
+    // Each participant receives only their own tasks to review.
+    let retroTasks: unknown[] = [];
+    if (meeting.previousMeetingId && hotState.phase === MeetingPhase.RETROSPECTIVE) {
+      const retroFilter = isCreatorJoining
+        ? { meetingId: meeting.previousMeetingId }
+        : { meetingId: meeting.previousMeetingId, authorId: new Types.ObjectId(userId) };
+
+      retroTasks = await this.taskModel
+        .find(retroFilter)
+        .select('_id authorId description commonQuestion deadline contributionImportance estimateHours isCompleted retroStatus')
+        .lean()
+        .exec();
+    }
+
+    // Build votes map: { [userId]: { payload, fullName, updatedAt } }
+    // Sent to ALL joining users so the live panel hydrates on join/reconnect.
+    const votesMap: Record<string, { payload: Record<string, unknown>; fullName: string | null; updatedAt: string }> = {};
+    const hydrationTs = new Date().toISOString();
+    for (const { userId: voteUserId, vote } of currentVotes) {
+      const participant = participants.find((p) => p.userId === voteUserId);
+      votesMap[voteUserId] = {
+        payload: vote as Record<string, unknown>,
+        fullName: participant?.fullName ?? null,
+        updatedAt: hydrationTs,
       };
+    }
 
-      await this.addParticipant(meetingId, participantData);
-      this.socketToUser.set(client.id, { userId, meetingId });
+    const stateSync = {
+      meetingId,
+      phase: hotState.phase,
+      status: hotState.status,
+      participants,
+      submittedUserIds: submittedIds,
+      pendingUserIds,
+      hasSubmitted: submittedIds.includes(userId),
+      myDraft,
+      retroTasks,
+      retroStatuses,
+      isCreator: isCreatorJoining,
+      previousMeetingId: meeting.previousMeetingId?.toString() ?? null,
+      // Live votes map for instant panel hydration.
+      votes: votesMap,
+    };
 
-      const participants = this.getParticipantsArray(meetingId);
-      this.server.to(roomName).emit('participants_updated', {
+    client.emit('room:state_sync', stateSync);
+
+    // ── Broadcast updated participant list ────────────────────────────────────
+    this.server.to(room).emit('room:participants_updated', { meetingId, participants });
+
+    this.logger.log(`[JOIN] ${userId} joined ${meetingId} | phase=${hotState.phase}`);
+    return this.ack(true, undefined, { meetingId, phase: hotState.phase });
+  }
+
+  // ─── room:leave ───────────────────────────────────────────────────────────
+
+  @SubscribeMessage('room:leave')
+  async handleLeaveRoom(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: { meetingId: string },
+  ) {
+    const userId = this.requireAuth(client);
+    const { meetingId } = data;
+    const room = roomName(meetingId);
+
+    client.leave(room);
+    await this.redisService.removeParticipant(meetingId, userId);
+    this.socketMeta.delete(client.id);
+
+    const participants = await this.redisService.getParticipants(meetingId);
+    this.server.to(room).emit('room:participants_updated', { meetingId, participants });
+
+    return this.ack(true);
+  }
+
+  // ─── user:submit_vote ────────────────────────────────────────────────────
+
+  @SubscribeMessage('user:submit_vote')
+  async handleSubmitVote(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: Record<string, unknown>,
+  ) {
+    const userId = this.requireAuth(client);
+    const meetingId = data.meetingId as string;
+    const phase = data.phase as MeetingPhase;
+
+    if (!meetingId || !phase) return this.ack(false, 'meetingId and phase required');
+
+    const hotState = await this.redisService.getHotState(meetingId);
+    if (!hotState) return this.ack(false, 'Meeting not active');
+
+    if (hotState.phase !== phase) {
+      return this.ack(false, `Phase mismatch: meeting is in ${hotState.phase}`);
+    }
+
+    // Store vote in Redis
+    await this.redisService.setVote(meetingId, phase, userId, data);
+    await this.redisService.markSubmitted(meetingId, phase, userId);
+
+    const submittedAt = new Date().toISOString();
+    const room = roomName(meetingId);
+
+    // Broadcast to room — anonymised (no data)
+    this.server.to(room).emit('room:vote_received', { meetingId, phase, userId, submittedAt });
+
+    // Update pending voters list for entire room
+    const [pending, submitted] = await Promise.all([
+      this.redisService.getPendingParticipants(meetingId, phase),
+      this.redisService.getSubmittedIds(meetingId, phase),
+    ]);
+
+    this.server.to(room).emit('room:pending_voters_updated', { meetingId, phase, pending, submitted });
+
+    // Send full submission data to creator only.
+    // Always send even if the creator submitted their own vote so they see it
+    // in the admin panel.
+    const creatorSocketId = await this.redisService.getCreatorSocket(meetingId);
+    if (creatorSocketId) {
+      const participantInfo = await this.redisService.getParticipants(meetingId).then(
+        (ps) => ps.find((p) => p.userId === userId),
+      );
+      this.server.to(creatorSocketId).emit('room:submission_created', {
+        id: `${meetingId}:${phase}:${userId}`,
         meetingId,
-        participants,
-        totalParticipants: participants.length,
+        phase,
+        userId,
+        fullName: participantInfo?.fullName ?? null,
+        submittedAt,
+        data,
       });
 
-      return {
-        success: true,
+      const total = (await this.redisService.getParticipants(meetingId)).length;
+      this.server.to(creatorSocketId).emit('admin:voting_progress', {
         meetingId,
-        participants,
-        totalParticipants: participants.length,
-      };
-    } catch (error) {
-      this.logger.error(`[JOIN] Error: ${error.message}`);
-      return { success: false, error: error.message };
+        phase,
+        submitted: submitted.length,
+        total,
+        percentage: total > 0 ? Math.round((submitted.length / total) * 100) : 0,
+      });
     }
+
+    this.logger.log(`[VOTE] ${userId} submitted vote for ${phase} in ${meetingId}`);
+    return this.ack(true, undefined, { submittedAt });
   }
 
-  @SubscribeMessage('leave_meeting')
-  async handleLeaveMeeting(
+  // ─── user:update_live_vote ────────────────────────────────────────────────
+  // Primary persistence event — replaces the old submit+slider split.
+  // Fires on every slider release / field blur. Saves to Redis immediately
+  // and broadcasts to the whole room so the creator (and everyone) sees it.
+
+  @SubscribeMessage('user:update_live_vote')
+  async handleUpdateLiveVote(
     @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() data: { meetingId: string },
+    @MessageBody() data: Record<string, unknown>,
   ) {
-    if (!client.userId) return;
+    const userId = this.requireAuth(client);
+    const meetingId = data.meetingId as string;
+    const phase = data.phase as MeetingPhase;
+    const payload = data.payload as Record<string, unknown> | undefined;
 
+    if (!meetingId || !phase || !payload) {
+      return this.ack(false, 'meetingId, phase, and payload are required');
+    }
+
+    const hotState = await this.redisService.getHotState(meetingId);
+    if (!hotState) return this.ack(false, 'Meeting not active');
+    if (hotState.phase !== phase) {
+      return this.ack(false, `Phase mismatch: meeting is in ${hotState.phase}`);
+    }
+
+    // Persist to Redis hot state
+    await this.redisService.setVote(meetingId, phase, userId, payload);
+    await this.redisService.markSubmitted(meetingId, phase, userId);
+
+    const updatedAt = new Date().toISOString();
+    const room = roomName(meetingId);
+
+    // Look up full name for display in creator panel
+    const participants = await this.redisService.getParticipants(meetingId);
+    const participantInfo = participants.find((p) => p.userId === userId);
+
+    // Broadcast to the ENTIRE room (Figma/Slack model — everyone sees live updates)
+    this.server.to(room).emit('room:vote_updated', {
+      meetingId,
+      userId,
+      phase,
+      payload,
+      fullName: participantInfo?.fullName ?? null,
+      updatedAt,
+    });
+
+    // Update pending voters list for the whole room
+    const [pending, submitted] = await Promise.all([
+      this.redisService.getPendingParticipants(meetingId, phase),
+      this.redisService.getSubmittedIds(meetingId, phase),
+    ]);
+    this.server.to(room).emit('room:pending_voters_updated', { meetingId, phase, pending, submitted });
+
+    // Update voting progress ring for creator
+    const creatorSocketId = await this.redisService.getCreatorSocket(meetingId);
+    if (creatorSocketId) {
+      const total = participants.length;
+      this.server.to(creatorSocketId).emit('admin:voting_progress', {
+        meetingId,
+        phase,
+        submitted: submitted.length,
+        total,
+        percentage: total > 0 ? Math.round((submitted.length / total) * 100) : 0,
+      });
+    }
+
+    this.logger.log(`[LIVE_VOTE] ${userId} updated ${phase} vote in ${meetingId}`);
+    return this.ack(true, undefined, { updatedAt });
+  }
+
+  // ─── user:update_slider (legacy draft — kept for backward compat) ─────────
+
+  @SubscribeMessage('user:update_slider')
+  async handleUpdateSlider(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: Record<string, unknown>,
+  ) {
+    const userId = this.requireAuth(client);
+    const meetingId = data.meetingId as string;
+    const phase = data.phase as MeetingPhase;
+
+    if (!meetingId || !phase) return this.ack(false, 'meetingId and phase required');
+
+    const draft: Record<string, string> = {};
+    Object.entries(data).forEach(([k, v]) => {
+      if (k !== 'meetingId' && k !== 'phase') {
+        draft[k] = typeof v === 'string' ? v : JSON.stringify(v);
+      }
+    });
+
+    await this.redisService.setDraft(meetingId, phase, userId, draft);
+    return this.ack(true);
+  }
+
+  // ─── retro:submit_task_status ────────────────────────────────────────────
+
+  @SubscribeMessage('retro:submit_task_status')
+  async handleRetroStatus(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: WsRetroStatusDto,
+  ) {
+    const userId = this.requireAuth(client);
+    const { meetingId, taskId, status, statusNote } = data;
+
+    const retroStatus: RetroTaskStatus = {
+      taskId,
+      userId,
+      status,
+      statusNote: statusNote ?? null,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.redisService.setRetroStatus(meetingId, taskId, retroStatus);
+
+    const allStatuses = await this.redisService.getAllRetroStatuses(meetingId);
+    const room = roomName(meetingId);
+
+    this.server.to(room).emit('room:retro_status_updated', {
+      meetingId,
+      taskStatuses: allStatuses,
+    });
+
+    // Notify creator of per-user progress
+    const creatorSocketId = await this.redisService.getCreatorSocket(meetingId);
+    if (creatorSocketId) {
+      const userStatuses = allStatuses.filter((s) => s.userId === userId);
+      this.server.to(creatorSocketId).emit('admin:retro_progress', {
+        meetingId,
+        userId,
+        fullName: client.userFullName ?? null,
+        statuses: userStatuses,
+      });
+    }
+
+    this.logger.log(`[RETRO] ${userId} marked task ${taskId} as ${status}`);
+    return this.ack(true);
+  }
+
+  // ─── admin:advance_phase ─────────────────────────────────────────────────
+
+  @SubscribeMessage('admin:advance_phase')
+  async handleAdvancePhase(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: WsAdvancePhaseDto,
+  ) {
+    const userId = this.requireAuth(client);
+    const { meetingId, toPhase } = data;
+
+    const meeting = await this.assertCreator(meetingId, userId, client);
+    if (!meeting) return this.ack(false, 'Forbidden');
+
+    const hotState = await this.redisService.getHotState(meetingId);
+    if (!hotState) return this.ack(false, 'Meeting not active in Redis');
+
+    const currentPhase = hotState.phase;
+
+    // Flush current phase data to MongoDB
+    await this.flushService.flushPhaseToMongo(meetingId, currentPhase);
+
+    // Notify the room that tasks are now persisted (clients can invalidate REST caches).
+    if (currentPhase === MeetingPhase.TASK_PLANNING) {
+      const room = roomName(meetingId);
+      this.server.to(room).emit('room:task_created', { meetingId });
+    }
+
+    // Update Redis state
+    await this.redisService.setHotState(meetingId, toPhase, MeetingStatus.ACTIVE, currentPhase);
+
+    // Persist phase change to MongoDB
+    const isFinishing = toPhase === MeetingPhase.FINISHED;
+    await this.meetingModel.findByIdAndUpdate(meetingId, {
+      $set: {
+        currentPhase: toPhase,
+        ...(isFinishing && { status: MeetingStatus.FINISHED }),
+      },
+    });
+
+    if (isFinishing) {
+      await this.flushService.finishMeeting(meetingId);
+    }
+
+    const room = roomName(meetingId);
+    this.server.to(room).emit('room:phase_changed', {
+      meetingId,
+      phase: toPhase,
+      previousPhase: currentPhase,
+    });
+
+    this.logger.log(`[PHASE] ${meetingId}: ${currentPhase} → ${toPhase}`);
+    return this.ack(true, undefined, { phase: toPhase });
+  }
+
+  // ─── admin:approve_task ───────────────────────────────────────────────────
+
+  @SubscribeMessage('admin:approve_task')
+  async handleApproveTask(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: WsApproveTaskDto,
+  ) {
+    const userId = this.requireAuth(client);
+    const { meetingId, taskId, approved } = data;
+
+    const meeting = await this.assertCreator(meetingId, userId, client);
+    if (!meeting) return this.ack(false, 'Forbidden');
+
+    await this.redisService.setTaskApproval(meetingId, taskId, approved);
+
+    const room = roomName(meetingId);
+    // Broadcast to the whole room so progress indicators stay in sync.
+    this.server.to(room).emit('room:task_approval_updated', {
+      meetingId,
+      taskId,
+      approved,
+    });
+
+    // Emit directly to the affected participant (taskId === their userId)
+    // so they see approval in real-time without a REST round-trip.
+    const participants = await this.redisService.getParticipants(meetingId);
+    const target = participants.find((p) => p.userId === taskId);
+    if (target?.socketId) {
+      this.server.to(target.socketId).emit('room:task_approved', {
+        meetingId,
+        userId: taskId,
+        approved,
+      });
+    }
+
+    this.logger.log(`[APPROVE] userId=${taskId} approved=${approved} in ${meetingId}`);
+    return this.ack(true);
+  }
+
+  // ─── admin:finish_meeting ─────────────────────────────────────────────────
+
+  @SubscribeMessage('admin:finish_meeting')
+  async handleFinishMeeting(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: WsFinishMeetingDto,
+  ) {
+    const userId = this.requireAuth(client);
     const { meetingId } = data;
-    const userId = client.userId;
 
-    const roomName = `meeting-${meetingId}`;
-    client.leave(roomName);
+    const meeting = await this.assertCreator(meetingId, userId, client);
+    if (!meeting) return this.ack(false, 'Forbidden');
 
-    await this.removeParticipant(meetingId, userId, client.id);
-    this.socketToUser.delete(client.id);
+    await this.flushService.finishMeeting(meetingId);
+    await this.redisService.setHotState(meetingId, MeetingPhase.FINISHED, MeetingStatus.FINISHED);
 
-    return { success: true, meetingId };
+    const room = roomName(meetingId);
+    this.server.to(room).emit('room:phase_changed', {
+      meetingId,
+      phase: MeetingPhase.FINISHED,
+      previousPhase: MeetingPhase.TASK_PLANNING,
+    });
+
+    this.logger.log(`[FINISH] Meeting ${meetingId} finished`);
+    return this.ack(true);
   }
 
-  // --- Helpers ---
+  // ─── Emitter helpers (called by MeetingsService for REST-triggered events) ──
 
-  private async addParticipant(meetingId: string, participant: MeetingParticipant) {
-    if (!this.activeParticipants.has(meetingId)) {
-      this.activeParticipants.set(meetingId, new Map());
-    }
-    this.activeParticipants.get(meetingId)!.set(participant.userId, participant);
+  emitPhaseChange(meetingId: string, data: Record<string, unknown>): void {
+    this.server.to(roomName(meetingId)).emit('room:phase_changed', { meetingId, ...data });
   }
 
-  private async removeParticipant(meetingId: string, userId: string, socketId: string) {
-    const meetingParticipants = this.activeParticipants.get(meetingId);
-    if (meetingParticipants) {
-      const participant = meetingParticipants.get(userId);
-
-      if (participant && participant.socketId === socketId) {
-        meetingParticipants.delete(userId);
-
-        const participants = Array.from(meetingParticipants.values());
-        this.server.to(`meeting-${meetingId}`).emit('participants_updated', {
-          meetingId,
-          participants,
-          totalParticipants: participants.length,
-        });
-      }
-
-      if (meetingParticipants.size === 0) {
-        this.activeParticipants.delete(meetingId);
-      }
-    }
-  }
-
-  private getParticipantsArray(meetingId: string): MeetingParticipant[] {
-    const map = this.activeParticipants.get(meetingId);
-    return map ? Array.from(map.values()) : [];
-  }
-
-  public getActiveParticipants(meetingId: string): MeetingParticipant[] {
-    return this.getParticipantsArray(meetingId);
-  }
-
-  // --- Emitters called by Service ---
-
-  emitPhaseChange(meetingId: string, data: any) {
-    this.server.to(`meeting-${meetingId}`).emit('phaseChanged', { meetingId, ...data });
-  }
-
-  // Generic emitter for updates in any phase
-  emitMeetingUpdated(meetingId: string, type: string, userId: string) {
-    this.server.to(`meeting-${meetingId}`).emit('meetingUpdated', {
+  emitMeetingUpdated(meetingId: string, type: string, userId: string): void {
+    this.server.to(roomName(meetingId)).emit('meetingUpdated', {
       meetingId,
       type,
       userId,
@@ -231,13 +646,63 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
     });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  emitParticipantJoined(meetingId: string, userId: string) {
-    // Legacy support - kept for backward compatibility
+  /** @deprecated kept for REST compatibility only */
+  emitParticipantJoined(_meetingId: string, _userId: string): void {}
+  /** @deprecated kept for REST compatibility only */
+  emitParticipantLeft(_meetingId: string, _userId: string): void {}
+
+  getActiveParticipants(meetingId: string) {
+    return this.redisService.getParticipants(meetingId);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  emitParticipantLeft(meetingId: string, userId: string) {
-    // Legacy support - kept for backward compatibility
+  // ─── Private helpers ──────────────────────────────────────────────────────
+
+  private requireAuth(client: AuthenticatedSocket): string {
+    if (!client.userId) {
+      this.emit(client, 'error:unauthorized', { message: 'Not authenticated' });
+      throw new WsException('Not authenticated');
+    }
+    return client.userId;
   }
+
+  private async assertCreator(
+    meetingId: string,
+    userId: string,
+    client: AuthenticatedSocket,
+  ): Promise<MeetingDocument | null> {
+    const meeting = await this.meetingModel
+      .findById(meetingId)
+      .select('creatorId')
+      .exec();
+
+    if (!meeting) {
+      this.emit(client, 'error:forbidden', { message: 'Meeting not found', action: 'creator_action' });
+      return null;
+    }
+
+    if (resolveId(meeting.creatorId) !== userId) {
+      this.emit(client, 'error:forbidden', {
+        message: 'Only the creator can perform this action',
+        action: 'creator_action',
+      });
+      return null;
+    }
+
+    return meeting;
+  }
+
+  private emit(client: Socket, event: string, data: unknown): void {
+    client.emit(event, data);
+  }
+
+  private ack(success: boolean, error?: string, data?: Record<string, unknown>) {
+    if (!success) return { success: false, error };
+    return { success: true, ...data };
+  }
+}
+
+// ─── Pure helpers ─────────────────────────────────────────────────────────────
+
+function roomName(meetingId: string): string {
+  return `meeting-${meetingId}`;
 }

@@ -45,4 +45,13 @@ export class CreateMeetingDto {
   @IsArray()
   @IsString({ each: true })
   participantIds?: string[];
+
+  @ApiProperty({
+    description: 'Link to a previous meeting for Phase 0 retrospective review',
+    example: '507f1f77bcf86cd799439030',
+    required: false,
+  })
+  @IsOptional()
+  @IsMongoId()
+  previousMeetingId?: string;
 }
