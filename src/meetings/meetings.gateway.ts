@@ -169,6 +169,20 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
       isCreatorJoining ||
       participantIds.some((id) => resolveId(id) === userId);
 
+    // ── Creator-First Rule ────────────────────────────────────────────────────
+    // Participants cannot join until the creator has connected at least once.
+    // We use the presence of creator_socket in Redis as the signal.
+    // Only enforced for UPCOMING meetings — once ACTIVE, anyone can rejoin freely.
+    if (!isCreatorJoining && meeting.status === MeetingStatus.UPCOMING) {
+      const creatorSocket = await this.redisService.getCreatorSocket(meetingId);
+      if (!creatorSocket) {
+        this.logger.log(
+          `[JOIN] Blocked ${userId} from ${meetingId} — creator not present yet`,
+        );
+        return this.ack(false, 'creator_not_present');
+      }
+    }
+
     // Auto-register: any authenticated user who joins the room is added as a
     // participant in MongoDB so they appear in the participants list.
     if (!alreadyParticipant) {
@@ -205,14 +219,24 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     this.socketMeta.set(client.id, { userId, meetingId });
 
-    // ── Always refresh creator socket on every join so reconnects work ───────
+    // ── Creator: register socket + activate UPCOMING meeting ─────────────────
     if (isCreatorJoining) {
       await this.redisService.setCreatorSocket(meetingId, client.id);
+
+      // Transition UPCOMING → ACTIVE when the creator first joins.
+      if (meeting.status === MeetingStatus.UPCOMING) {
+        await this.meetingModel.findByIdAndUpdate(meetingId, {
+          $set: { status: MeetingStatus.ACTIVE },
+        });
+        await this.redisService.setHotState(meetingId, hotState.phase, MeetingStatus.ACTIVE);
+        hotState = { ...hotState, status: MeetingStatus.ACTIVE };
+        this.logger.log(`[JOIN] Creator joined — meeting ${meetingId} is now ACTIVE`);
+      }
     }
 
     // ── Build state-sync payload ─────────────────────────────────────────────
     // All users receive current votes so the live panel hydrates on join/reconnect.
-    const [participants, submittedIds, myDraft, retroStatuses, currentVotes] = await Promise.all([
+    const [participants, submittedIds, myDraft, retroStatuses, currentVotes, taskApprovals] = await Promise.all([
       this.redisService.getParticipants(meetingId),
       this.redisService.getSubmittedIds(meetingId, hotState.phase),
       this.redisService.getDraft(meetingId, hotState.phase, userId),
@@ -220,6 +244,8 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
         ? this.redisService.getAllRetroStatuses(meetingId)
         : Promise.resolve([] as RetroTaskStatus[]),
       this.redisService.getAllVotes<Record<string, unknown>>(meetingId, hotState.phase as MeetingPhase),
+      // Approvals are relevant during task_planning but safe to always include.
+      this.redisService.getAllTaskApprovals(meetingId),
     ]);
 
     const pendingIds = new Set(submittedIds);
@@ -269,8 +295,10 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
       retroStatuses,
       isCreator: isCreatorJoining,
       previousMeetingId: meeting.previousMeetingId?.toString() ?? null,
-      // Live votes map for instant panel hydration.
+      // Live votes map for instant panel hydration on reconnect.
       votes: votesMap,
+      // Task approval flags — always sent so the admin panel hydrates correctly.
+      taskApprovals,
     };
 
     client.emit('room:state_sync', stateSync);
@@ -529,29 +557,38 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     const currentPhase = hotState.phase;
 
-    // Flush current phase data to MongoDB
-    await this.flushService.flushPhaseToMongo(meetingId, currentPhase);
+    // Flush current-phase data to MongoDB before moving to the next phase.
+    const flushed = await this.flushService.flushPhaseToMongo(meetingId, currentPhase);
+    this.logger.log(
+      `[PHASE] Pre-advance flush of ${currentPhase}: ${flushed} record(s) written`,
+    );
+    if (flushed === 0 && currentPhase !== MeetingPhase.RETROSPECTIVE) {
+      this.logger.warn(
+        `[PHASE] No records flushed for ${currentPhase} in meeting ${meetingId} — ` +
+        `participants may not have voted yet`,
+      );
+    }
 
-    // Notify the room that tasks are now persisted (clients can invalidate REST caches).
+    // Notify the room that tasks are now persisted (clients invalidate REST caches).
     if (currentPhase === MeetingPhase.TASK_PLANNING) {
       const room = roomName(meetingId);
       this.server.to(room).emit('room:task_created', { meetingId });
     }
 
-    // Update Redis state
-    await this.redisService.setHotState(meetingId, toPhase, MeetingStatus.ACTIVE, currentPhase);
-
-    // Persist phase change to MongoDB
     const isFinishing = toPhase === MeetingPhase.FINISHED;
-    await this.meetingModel.findByIdAndUpdate(meetingId, {
-      $set: {
-        currentPhase: toPhase,
-        ...(isFinishing && { status: MeetingStatus.FINISHED }),
-      },
-    });
 
     if (isFinishing) {
-      await this.flushService.finishMeeting(meetingId);
+      // Delegate entirely to finishMeeting which handles: flush + DB seal + Redis update.
+      // We already flushed above, but finishMeeting will only flush again if no-op
+      // (the votes were deleted after the first flush, so the second pass is safe).
+      await this.redisService.setHotState(meetingId, MeetingPhase.FINISHED, MeetingStatus.FINISHED, currentPhase);
+      await this.flushService.finishMeeting(meetingId, currentPhase);
+    } else {
+      // Standard mid-meeting phase advance — update Redis + MongoDB only.
+      await this.redisService.setHotState(meetingId, toPhase, MeetingStatus.ACTIVE, currentPhase);
+      await this.meetingModel.findByIdAndUpdate(meetingId, {
+        $set: { currentPhase: toPhase },
+      });
     }
 
     const room = roomName(meetingId);
@@ -617,17 +654,37 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
     const meeting = await this.assertCreator(meetingId, userId, client);
     if (!meeting) return this.ack(false, 'Forbidden');
 
-    await this.flushService.finishMeeting(meetingId);
-    await this.redisService.setHotState(meetingId, MeetingPhase.FINISHED, MeetingStatus.FINISHED);
+    // Read the phase that is currently active so we can flush it before sealing.
+    const hotState = await this.redisService.getHotState(meetingId);
+    if (!hotState) return this.ack(false, 'Meeting not active in Redis');
+
+    const currentPhase = hotState.phase;
+
+    try {
+      // Update Redis FIRST so any concurrent vote writes are rejected.
+      await this.redisService.setHotState(meetingId, MeetingPhase.FINISHED, MeetingStatus.FINISHED, currentPhase);
+
+      // Flush the active phase (e.g. task_planning → Tasks collection) then
+      // mark the meeting as FINISHED in MongoDB.
+      await this.flushService.finishMeeting(meetingId, currentPhase);
+    } catch (err) {
+      this.logger.error(
+        `[FINISH] Failed to finish meeting ${meetingId}: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+      // Revert Redis state so the creator can retry.
+      await this.redisService.setHotState(meetingId, currentPhase, MeetingStatus.ACTIVE);
+      return this.ack(false, 'Failed to finish meeting — please try again');
+    }
 
     const room = roomName(meetingId);
     this.server.to(room).emit('room:phase_changed', {
       meetingId,
       phase: MeetingPhase.FINISHED,
-      previousPhase: MeetingPhase.TASK_PLANNING,
+      previousPhase: currentPhase,
     });
 
-    this.logger.log(`[FINISH] Meeting ${meetingId} finished`);
+    this.logger.log(`[FINISH] Meeting ${meetingId} finished (flushed from phase=${currentPhase})`);
     return this.ack(true);
   }
 

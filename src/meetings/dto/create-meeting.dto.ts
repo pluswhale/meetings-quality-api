@@ -2,14 +2,18 @@ import { IsNotEmpty, IsString, IsArray, IsOptional, IsMongoId } from 'class-vali
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateMeetingDto {
+  /**
+   * Meetings MUST be created inside a project.
+   * The projectId is required — reject any request without it.
+   */
   @ApiProperty({
-    description: 'Project this meeting belongs to',
+    description: 'Project this meeting belongs to (required)',
     example: '507f1f77bcf86cd799439050',
-    required: false,
+    required: true,
   })
-  @IsOptional()
-  @IsMongoId()
-  projectId?: string;
+  @IsNotEmpty({ message: 'projectId обязателен — встреча должна принадлежать проекту' })
+  @IsMongoId({ message: 'projectId должен быть валидным MongoDB ObjectId' })
+  projectId: string;
 
   @ApiProperty({
     description: 'Название встречи',

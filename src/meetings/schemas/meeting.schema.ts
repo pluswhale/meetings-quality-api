@@ -6,6 +6,7 @@ export enum MeetingPhase {
   EMOTIONAL_EVALUATION = 'emotional_evaluation',
   UNDERSTANDING_CONTRIBUTION = 'understanding_contribution',
   TASK_PLANNING = 'task_planning',
+  TASK_EVALUATION = 'task_evaluation',
   FINISHED = 'finished',
 }
 
@@ -163,6 +164,14 @@ export class Meeting {
    */
   @Prop({ type: Types.ObjectId, ref: 'Meeting', required: false, index: true, default: null })
   previousMeetingId: Types.ObjectId | null;
+
+  /**
+   * The meeting that was created as a follow-up to this one.
+   * Set automatically when the next meeting is created with previousMeetingId = this._id.
+   * Enforces a linear chain: one meeting can have at most one successor.
+   */
+  @Prop({ type: Types.ObjectId, ref: 'Meeting', required: false, default: null })
+  nextMeetingId: Types.ObjectId | null;
 
   @Prop({ required: true })
   title: string;

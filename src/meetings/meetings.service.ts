@@ -165,7 +165,32 @@ export class MeetingsService {
     const status: MeetingStatus =
       upcomingDate > now ? MeetingStatus.UPCOMING : MeetingStatus.ACTIVE;
 
+    // projectId is now required — guaranteed non-null by the DTO decorator.
+    const projectObjectId = new Types.ObjectId(createMeetingDto.projectId);
+
     const hasPreviousMeeting = Boolean(createMeetingDto.previousMeetingId);
+    const previousMeetingObjectId = hasPreviousMeeting
+      ? new Types.ObjectId(createMeetingDto.previousMeetingId!)
+      : undefined;
+
+    // Validate that the linked previous meeting belongs to the same project.
+    if (previousMeetingObjectId) {
+      const prev = await this.meetingModel.findById(previousMeetingObjectId).lean();
+      if (!prev) {
+        throw new BadRequestException('Предыдущая встреча не найдена');
+      }
+      if (!prev.projectId || !prev.projectId.equals(projectObjectId)) {
+        throw new BadRequestException(
+          'Связанная встреча должна принадлежать тому же проекту',
+        );
+      }
+      // Prevent double-linking (a meeting can have at most one successor).
+      if (prev.nextMeetingId) {
+        throw new BadRequestException(
+          'У выбранной встречи уже есть продолжение',
+        );
+      }
+    }
 
     const saved = await new this.meetingModel({
       title: createMeetingDto.title,
@@ -177,13 +202,19 @@ export class MeetingsService {
         : MeetingPhase.EMOTIONAL_EVALUATION,
       status,
       upcomingDate,
-      ...(createMeetingDto.projectId && {
-        projectId: new Types.ObjectId(createMeetingDto.projectId),
-      }),
-      ...(hasPreviousMeeting && {
-        previousMeetingId: new Types.ObjectId(createMeetingDto.previousMeetingId!),
+      projectId: projectObjectId,
+      ...(previousMeetingObjectId && {
+        previousMeetingId: previousMeetingObjectId,
       }),
     }).save();
+
+    // Maintain the bidirectional link: set nextMeetingId on the previous meeting.
+    // This allows the chain to be traversed in both directions without extra queries.
+    if (previousMeetingObjectId) {
+      await this.meetingModel.findByIdAndUpdate(previousMeetingObjectId, {
+        $set: { nextMeetingId: saved._id },
+      });
+    }
 
     return this.transformMeetingResponse(saved);
   }
@@ -1147,6 +1178,7 @@ export class MeetingsService {
         })),
         submittedAt: e.submittedAt,
       })),
+      projectId: meeting.projectId?.toString() ?? null,
       previousMeetingId: meeting.previousMeetingId?.toString() ?? null,
       hasRetrospectivePhase: Boolean(meeting.previousMeetingId),
       createdAt: meeting.createdAt,

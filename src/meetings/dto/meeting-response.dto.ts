@@ -140,6 +140,9 @@ export class MeetingResponseDto {
   @ApiProperty({ type: [TaskEvaluationDto] })
   taskEvaluations: TaskEvaluationDto[];
 
+  @ApiProperty({ example: '507f1f77bcf86cd799439050', nullable: true })
+  projectId: string | null;
+
   @ApiProperty({ example: '507f1f77bcf86cd799439030', nullable: true })
   previousMeetingId: string | null;
 

@@ -60,20 +60,25 @@ export class MeetingsFlushService {
    * Returns the number of records flushed.
    */
   async flushPhaseToMongo(meetingId: string, phase: MeetingPhase): Promise<number> {
-    this.logger.log(`[Flush] ${meetingId} → phase=${phase}`);
+    this.logger.log(`[Flush] ${meetingId} → flushing phase=${phase}`);
 
     switch (phase) {
+      case MeetingPhase.RETROSPECTIVE:
+        return this.flushRetro(meetingId);
       case MeetingPhase.EMOTIONAL_EVALUATION:
         return this.flushEmotional(meetingId);
       case MeetingPhase.UNDERSTANDING_CONTRIBUTION:
         return this.flushUnderstanding(meetingId);
       case MeetingPhase.TASK_PLANNING:
         return this.flushTaskPlanning(meetingId);
-      case MeetingPhase.FINISHED:
+      case MeetingPhase.TASK_EVALUATION:
+        // Bug fix: was missing — caused task evaluation votes to be silently dropped.
         return this.flushTaskEvaluation(meetingId);
-      case MeetingPhase.RETROSPECTIVE:
-        return this.flushRetro(meetingId);
+      case MeetingPhase.FINISHED:
+        // Already finished — nothing to flush.
+        return 0;
       default:
+        this.logger.warn(`[Flush] Unknown phase "${phase}" — nothing flushed`);
         return 0;
     }
   }
@@ -227,18 +232,31 @@ export class MeetingsFlushService {
       };
     });
 
-    await this.taskModel.bulkWrite(ops);
+    try {
+      const result = await this.taskModel.bulkWrite(ops, { ordered: false });
+      this.logger.log(
+        `[Flush] TaskPlanning: upserted ${ops.length} task(s) ` +
+        `(inserted=${result.upsertedCount}, modified=${result.modifiedCount})`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `[Flush] TaskPlanning bulkWrite failed for meeting ${meetingId}: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+      throw err; // Re-throw so the caller can surface the error and NOT advance the phase.
+    }
+
     await this.redis.deleteVotesForPhase(meetingId, MeetingPhase.TASK_PLANNING);
-    this.logger.log(`[Flush] TaskPlanning: upserted ${ops.length} tasks`);
     return ops.length;
   }
 
   // ─── Phase 4 — Task Evaluation (on finish) ────────────────────────────────
 
   async flushTaskEvaluation(meetingId: string): Promise<number> {
+    // Bug fix: votes are stored under the 'task_evaluation' key, NOT 'finished'.
     const votes = await this.redis.getAllVotes<TaskEvaluationVote>(
       meetingId,
-      MeetingPhase.FINISHED,
+      MeetingPhase.TASK_EVALUATION,
     );
     if (votes.length === 0) return 0;
 
@@ -262,23 +280,38 @@ export class MeetingsFlushService {
       $push: { taskEvaluations: { $each: newEvals } },
     });
 
-    await this.redis.deleteVotesForPhase(meetingId, MeetingPhase.FINISHED);
+    await this.redis.deleteVotesForPhase(meetingId, MeetingPhase.TASK_EVALUATION);
     this.logger.log(`[Flush] TaskEval: flushed ${newEvals.length} evaluations`);
     return newEvals.length;
   }
 
   /**
-   * Finishes the meeting: flushes any remaining task evaluation votes, updates
-   * Meeting.status to FINISHED, and sets currentPhase to FINISHED.
+   * Finishes the meeting.
+   *
+   * @param meetingId  - The meeting to finish.
+   * @param currentPhase - The phase that is active when finish is triggered.
+   *   MUST be supplied by the caller so we can flush any pending votes before
+   *   sealing the meeting.  If the creator is on task_planning and clicks
+   *   "Finish Meeting", those task votes MUST be persisted here — they will not
+   *   be flushed by any subsequent advance_phase call.
    */
-  async finishMeeting(meetingId: string): Promise<void> {
-    await this.flushTaskEvaluation(meetingId);
+  async finishMeeting(meetingId: string, currentPhase: MeetingPhase): Promise<void> {
+    // 1. Flush whatever phase was active when the creator finished.
+    //    This is the primary guard against data loss: if the creator goes
+    //    task_planning → finish (skipping task_evaluation), task plans
+    //    are flushed here rather than being silently dropped.
+    const flushed = await this.flushPhaseToMongo(meetingId, currentPhase);
+    this.logger.log(
+      `[Finish] Pre-finish flush of phase=${currentPhase}: ${flushed} record(s) written`,
+    );
+
+    // 2. Seal the meeting in MongoDB.
     await this.meetingModel.findByIdAndUpdate(meetingId, {
       $set: {
         status: MeetingStatus.FINISHED,
         currentPhase: MeetingPhase.FINISHED,
       },
     });
-    this.logger.log(`[Flush] Meeting ${meetingId} finished and persisted`);
+    this.logger.log(`[Finish] Meeting ${meetingId} marked as finished`);
   }
 }
