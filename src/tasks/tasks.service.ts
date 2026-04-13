@@ -119,16 +119,18 @@ export class TasksService {
   // ─── List ─────────────────────────────────────────────────────────────────
 
   /**
-   * Returns tasks visible to the current user, filtered by the provided
-   * optional criteria.
+   * Returns tasks filtered by the provided criteria.
    *
-   * Access rule: a user can only retrieve their own tasks (authorId filter).
-   * Additional optional filters: projectId, status, and description search.
+   * Scoping rules:
+   *   - When `projectId` is supplied: returns ALL tasks for that project,
+   *     regardless of who created them. `authorId` is NOT used as a filter.
+   *   - When `projectId` is omitted: falls back to the caller's own tasks only
+   *     (used by personal task views and the meeting-room task-planning phase).
    *
-   * @param userId   Caller's userId — always applied as the authorId filter.
-   * @param filter   'current' → isCompleted=false, 'past' → isCompleted=true.
-   * @param projectId  Scope to a specific project.
-   * @param search   Case-insensitive substring match on description.
+   * @param userId     Caller's userId — applied as authorId filter only when no projectId given.
+   * @param filter     'current' → isCompleted=false, 'past' → isCompleted=true.
+   * @param projectId  Scope to a specific project (returns all tasks, not just caller's).
+   * @param search     Case-insensitive substring match on description.
    */
   async findAll(
     userId: string,
@@ -136,17 +138,21 @@ export class TasksService {
     projectId?: string,
     search?: string,
   ): Promise<Task[]> {
-    const query: TaskFilterQuery = { authorId: new Types.ObjectId(userId) };
-
-    if (filter === 'current') query.isCompleted = false;
-    else if (filter === 'past') query.isCompleted = true;
+    const query: TaskFilterQuery = {};
 
     if (projectId) {
       if (!Types.ObjectId.isValid(projectId)) {
         throw new BadRequestException('Invalid project ID');
       }
+      // Project-scoped query: return every task in the project, owner or not.
       query.projectId = new Types.ObjectId(projectId);
+    } else {
+      // Personal query (no project): scope to the caller's own tasks only.
+      query.authorId = new Types.ObjectId(userId);
     }
+
+    if (filter === 'current') query.isCompleted = false;
+    else if (filter === 'past') query.isCompleted = true;
 
     if (search?.trim()) {
       query.description = { $regex: new RegExp(search.trim(), 'i') };
@@ -162,7 +168,11 @@ export class TasksService {
 
   // ─── Find one ─────────────────────────────────────────────────────────────
 
-  async findOne(id: string, userId: string): Promise<TaskDocument> {
+  /**
+   * Returns a single task by ID. Any authenticated user may read any task.
+   * Ownership is only enforced in mutating operations (update / remove).
+   */
+  async findOne(id: string, _userId?: string): Promise<TaskDocument> {
     if (!Types.ObjectId.isValid(id)) {
       throw new BadRequestException('Invalid task ID');
     }
@@ -177,13 +187,6 @@ export class TasksService {
       throw new NotFoundException('Task not found');
     }
 
-    const authorObjectId = resolveAuthorObjectId(
-      task.authorId as unknown as Types.ObjectId | PopulatedAuthor,
-    );
-    if (!authorObjectId.equals(new Types.ObjectId(userId))) {
-      throw new ForbiddenException('You can only view your own tasks');
-    }
-
     return task;
   }
 
@@ -194,15 +197,17 @@ export class TasksService {
     updateTaskDto: UpdateTaskDto,
     userId: string,
   ): Promise<TaskDocument> {
-    const task = await this.findOne(id, userId);
+    const task = await this.findOne(id);
 
-    if (task.approved) {
-      throw new ForbiddenException('Cannot edit approved tasks');
+    // Ownership is enforced here: only the task author may mutate it.
+    const authorObjectId = resolveAuthorObjectId(
+      task.authorId as unknown as Types.ObjectId | PopulatedAuthor,
+    );
+    if (!authorObjectId.equals(new Types.ObjectId(userId))) {
+      throw new ForbiddenException('Only the task author can update this task');
     }
 
     // Build a typed update payload rather than mutating the DTO with `as any`.
-    // This keeps the DTO immutable, makes type coercions explicit (e.g. string → Date),
-    // and prevents accidental leaking of unknown DTO fields into the document.
     const updatePayload: Partial<{
       description: string;
       deadline: Date;
@@ -210,6 +215,31 @@ export class TasksService {
       contributionImportance: number;
       isCompleted: boolean;
     }> = {};
+
+    // Status toggle is always allowed for the owner, even on approved tasks.
+    if (updateTaskDto.isCompleted !== undefined) {
+      updatePayload.isCompleted = updateTaskDto.isCompleted;
+    }
+
+    // Content fields are locked once the task has been approved.
+    // A field only counts as a change when its incoming value actually differs
+    // from the stored value — this lets the status-toggle safely echo back the
+    // current estimateHours without tripping the approved guard.
+    const deadlineMs = task.deadline ? new Date(task.deadline).getTime() : null;
+    const incomingDeadlineMs = updateTaskDto.deadline
+      ? new Date(updateTaskDto.deadline).getTime()
+      : null;
+
+    const hasContentChange =
+      (updateTaskDto.description !== undefined && updateTaskDto.description !== task.description) ||
+      (updateTaskDto.deadline !== undefined && incomingDeadlineMs !== deadlineMs) ||
+      (updateTaskDto.estimateHours !== undefined && updateTaskDto.estimateHours !== task.estimateHours) ||
+      (updateTaskDto.contributionImportance !== undefined &&
+        updateTaskDto.contributionImportance !== task.contributionImportance);
+
+    if (hasContentChange && task.approved) {
+      throw new ForbiddenException('Cannot edit approved tasks');
+    }
 
     if (updateTaskDto.description !== undefined) {
       updatePayload.description = updateTaskDto.description;
@@ -222,20 +252,6 @@ export class TasksService {
     }
     if (updateTaskDto.contributionImportance !== undefined) {
       updatePayload.contributionImportance = updateTaskDto.contributionImportance;
-    }
-
-    // Status (isCompleted) may only be changed by the task author.
-    // findOne() above already enforces ownership, so this check is always
-    // satisfied for the caller — but it is kept explicit for clarity
-    // and to guard against future refactoring that might bypass findOne().
-    if (updateTaskDto.isCompleted !== undefined) {
-      const authorObjectId = resolveAuthorObjectId(
-        task.authorId as unknown as Types.ObjectId | PopulatedAuthor,
-      );
-      if (!authorObjectId.equals(new Types.ObjectId(userId))) {
-        throw new ForbiddenException('Only the task author can change task status');
-      }
-      updatePayload.isCompleted = updateTaskDto.isCompleted;
     }
 
     Object.assign(task, updatePayload);
@@ -253,8 +269,15 @@ export class TasksService {
   // ─── Remove ───────────────────────────────────────────────────────────────
 
   async remove(id: string, userId: string): Promise<void> {
-    // findOne already validates existence and ownership — no need to repeat checks.
-    await this.findOne(id, userId);
+    const task = await this.findOne(id);
+
+    const authorObjectId = resolveAuthorObjectId(
+      task.authorId as unknown as Types.ObjectId | PopulatedAuthor,
+    );
+    if (!authorObjectId.equals(new Types.ObjectId(userId))) {
+      throw new ForbiddenException('Only the task author can delete this task');
+    }
+
     await this.taskModel.findByIdAndDelete(id);
   }
 

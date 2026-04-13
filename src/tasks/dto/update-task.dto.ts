@@ -26,7 +26,7 @@ export class UpdateTaskDto {
   })
   @IsOptional()
   @IsNumber()
-  estimateHours: number;
+  estimateHours?: number;
 
   @ApiProperty({
     description: 'Важность вклада (0-100)',

@@ -47,11 +47,11 @@ export class TasksController {
 
   @Get()
   @ApiOperation({
-    summary: 'Get tasks for the current user',
+    summary: 'Get tasks',
     description:
-      'Returns tasks authored by the current user. ' +
-      'Supports optional filters: status (filter), project scope (projectId), ' +
-      'and keyword search on description (search).',
+      'When `projectId` is supplied: returns ALL tasks for that project regardless of author. ' +
+      'Without `projectId`: returns only the caller\'s own tasks. ' +
+      'Supports optional filters: status (filter) and keyword search on description (search).',
   })
   @ApiQuery({
     name: 'filter',
@@ -101,7 +101,7 @@ export class TasksController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Получить задачу по ID' })
+  @ApiOperation({ summary: 'Получить задачу по ID (доступно всем авторизованным)' })
   @ApiParam({ name: 'id', description: 'ID задачи' })
   @ApiResponse({
     status: 200,
@@ -109,10 +109,9 @@ export class TasksController {
     type: TaskResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Не авторизован' })
-  @ApiResponse({ status: 403, description: 'Можно просматривать только свои задачи' })
   @ApiResponse({ status: 404, description: 'Задача не найдена' })
-  findOne(@Param('id') id: string, @CurrentUser() user: any) {
-    return this.tasksService.findOne(id, user.userId);
+  findOne(@Param('id') id: string) {
+    return this.tasksService.findOne(id);
   }
 
   @Patch(':id')
