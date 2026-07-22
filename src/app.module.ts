@@ -27,6 +27,8 @@ import { RedisModule } from './redis/redis.module';
       useFactory: (configService: ConfigService) => ({
         connection: {
           url: configService.get<string>('REDIS_URL'),
+          maxRetriesPerRequest: null,
+          enableReadyCheck: false,
         },
         defaultJobOptions: {
           attempts: 5,

@@ -14,8 +14,8 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
         const url = configService.get<string>('REDIS_URL');
         const client = new Redis(url!, {
           lazyConnect: false,
-          maxRetriesPerRequest: 3,
-          enableReadyCheck: true,
+          maxRetriesPerRequest: null,
+          enableReadyCheck: false,
           retryStrategy: (times) => Math.min(times * 100, 3000),
         });
 
