@@ -43,6 +43,10 @@ function resolveUserRef(v: unknown): { _id: string; fullName: string; email: str
   return { _id: String(v), fullName: '', email: '' };
 }
 
+function resolveId(v: unknown): string {
+  return isPopulatedUser(v) ? v._id.toString() : String(v);
+}
+
 // ─── Service ───────────────────────────────────────────────────────────────────
 
 @Injectable()
@@ -61,7 +65,7 @@ export class ProjectsService {
    */
   private assertParticipant(project: ProjectDocument, userId: string): void {
     const isParticipant = project.participantIds.some(
-      (pid) => pid.toString() === userId,
+      (pid) => resolveId(pid) === userId,
     );
     if (!isParticipant) {
       throw new ForbiddenException('You are not a participant of this project');
@@ -73,7 +77,7 @@ export class ProjectsService {
    * Called before mutating project metadata.
    */
   private assertCreator(project: ProjectDocument, userId: string): void {
-    if (project.creatorId.toString() !== userId) {
+    if (resolveId(project.creatorId) !== userId) {
       throw new ForbiddenException('Only the project creator can perform this action');
     }
   }
@@ -217,7 +221,7 @@ export class ProjectsService {
 
     if (dto.participantIds !== undefined) {
       // Always preserve the creator in the participant list.
-      const participantSet = new Set<string>([project.creatorId.toString()]);
+      const participantSet = new Set<string>([resolveId(project.creatorId)]);
       for (const pid of dto.participantIds) {
         participantSet.add(pid);
       }

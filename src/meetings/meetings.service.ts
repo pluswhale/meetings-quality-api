@@ -25,6 +25,7 @@ import { SubmitUnderstandingContributionDto } from './dto/submit-understanding-c
 import { SubmitTaskPlanningDto } from './dto/submit-task-planning.dto';
 import { SubmitTaskEvaluationDto } from './dto/submit-task-evaluation.dto';
 import { MeetingsGateway } from './meetings.gateway';
+import { MeetingsRedisService } from './meetings.redis.service';
 
 import { MeetingResponseDto } from './dto/meeting-response.dto';
 import {
@@ -130,6 +131,7 @@ export class MeetingsService {
     @InjectModel(Meeting.name) private meetingModel: Model<MeetingDocument>,
     @InjectModel(Task.name) private taskModel: Model<TaskDocument>,
     private meetingsGateway: MeetingsGateway,
+    private meetingsRedisService: MeetingsRedisService,
   ) {}
 
   // ─── Authorization guard ──────────────────────────────────────────────────────
@@ -308,7 +310,12 @@ export class MeetingsService {
     if (dto.title !== undefined) updatePayload.title = dto.title;
     if (dto.question !== undefined) updatePayload.question = dto.question;
     if (dto.participantIds !== undefined) {
-      updatePayload.participantIds = dto.participantIds.map((pid) => new Types.ObjectId(pid));
+      // Always preserve the creator in the participant list.
+      const participantSet = new Set<string>([resolveId(meeting.creatorId)]);
+      for (const pid of dto.participantIds) {
+        participantSet.add(pid);
+      }
+      updatePayload.participantIds = [...participantSet].map((p) => new Types.ObjectId(p));
     }
 
     Object.assign(meeting, updatePayload);
@@ -319,7 +326,34 @@ export class MeetingsService {
   async remove(id: string, userId: string): Promise<void> {
     const meeting = await this.findOneInternal(id);
     this.assertCreator(meeting, userId);
+
+    const meetingObjectId = new Types.ObjectId(id);
+
+    // Cascade delete: remove all tasks that belong to this meeting.
+    await this.taskModel.deleteMany({ meetingId: meetingObjectId });
+
+    // Unlink the meeting chain so neighbours no longer point at a deleted meeting.
+    if (meeting.previousMeetingId) {
+      await this.meetingModel.findByIdAndUpdate(meeting.previousMeetingId, {
+        $set: { nextMeetingId: null },
+      });
+    }
+    if (meeting.nextMeetingId) {
+      await this.meetingModel.findByIdAndUpdate(meeting.nextMeetingId, {
+        $set: { previousMeetingId: null },
+      });
+    }
+
     await this.meetingModel.findByIdAndDelete(id);
+
+    // Best-effort Redis cleanup — a Redis failure must not fail the deletion.
+    try {
+      await this.meetingsRedisService.clearMeetingState(id);
+    } catch (err) {
+      this.logger.warn(
+        `Failed to clear Redis state for meeting ${id}: ${(err as Error).message}`,
+      );
+    }
   }
 
   async changePhase(id: string, dto: ChangePhaseDto, userId: string): Promise<MeetingResponseDto> {

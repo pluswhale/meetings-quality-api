@@ -239,4 +239,23 @@ export class MeetingsRedisService {
     if (!data) return {};
     return Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v === '1']));
   }
+
+  // ─── Cleanup ──────────────────────────────────────────────────────────────
+
+  async clearMeetingState(meetingId: string): Promise<void> {
+    let cursor = '0';
+    do {
+      const [next, keys] = await this.redis.scan(
+        cursor,
+        'MATCH',
+        `mq:meeting:${meetingId}:*`,
+        'COUNT',
+        100,
+      );
+      cursor = next;
+      if (keys.length > 0) {
+        await this.redis.del(...keys);
+      }
+    } while (cursor !== '0');
+  }
 }
