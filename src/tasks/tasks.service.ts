@@ -254,8 +254,15 @@ export class TasksService {
       updatePayload.contributionImportance = updateTaskDto.contributionImportance;
     }
 
-    Object.assign(task, updatePayload);
-    const saved = await task.save();
+    // Persist via a partial $set update rather than Object.assign + task.save().
+    // save() re-validates the WHOLE document and 500s on legacy tasks whose
+    // required fields (description, commonQuestion) were flushed empty by the
+    // old phase-flush — a status toggle must not fail on unrelated legacy data.
+    const saved = await this.taskModel
+      .findByIdAndUpdate(id, { $set: updatePayload }, { new: true })
+      .populate('authorId', 'fullName email')
+      .populate('meetingId', 'title question')
+      .exec();
 
     this.meetingsGateway.emitMeetingUpdated(
       task.meetingId.toString(),
@@ -263,7 +270,7 @@ export class TasksService {
       userId,
     );
 
-    return saved;
+    return saved as TaskDocument;
   }
 
   // ─── Remove ───────────────────────────────────────────────────────────────
@@ -327,8 +334,9 @@ export class TasksService {
       throw new ForbiddenException('Only the meeting creator can approve tasks');
     }
 
-    task.approved = approved;
-    await task.save();
+    // Partial $set — see update(): save() would re-validate the whole document
+    // and fail on legacy tasks with empty required fields.
+    await this.taskModel.updateOne({ _id: taskId }, { $set: { approved } }).exec();
 
     this.meetingsGateway.emitMeetingUpdated(
       task.meetingId.toString(),

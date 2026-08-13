@@ -188,6 +188,35 @@ export class MeetingsFlushService {
     );
     if (votes.length === 0) return 0;
 
+    // Skip drafts with unfilled required fields — an incomplete task must
+    // never reach MongoDB (and must not fail the whole flush on validation).
+    const isComplete = ({ vote }: { vote: TaskPlanningVote }): boolean => {
+      const parsedDeadline = vote.deadline ? new Date(vote.deadline) : null;
+      return (
+        typeof vote.taskDescription === 'string' &&
+        vote.taskDescription.trim().length > 0 &&
+        typeof vote.commonQuestion === 'string' &&
+        vote.commonQuestion.trim().length > 0 &&
+        parsedDeadline !== null &&
+        !isNaN(parsedDeadline.getTime()) &&
+        typeof vote.estimateHours === 'number' &&
+        vote.estimateHours > 0
+      );
+    };
+
+    const completeVotes = votes.filter(isComplete);
+    const skipped = votes.length - completeVotes.length;
+    if (skipped > 0) {
+      this.logger.warn(
+        `[Flush] TaskPlanning: skipped ${skipped} incomplete draft(s) for meeting ${meetingId}`,
+      );
+    }
+
+    if (completeVotes.length === 0) {
+      await this.redis.deleteVotesForPhase(meetingId, MeetingPhase.TASK_PLANNING);
+      return 0;
+    }
+
     // Fetch shared data once — not inside the per-vote loop.
     const [approvals, meetingDoc] = await Promise.all([
       this.redis.getAllTaskApprovals(meetingId),
@@ -203,7 +232,7 @@ export class MeetingsFlushService {
     // approvals is keyed by userId because the creator panel calls
     // emitApproveTask(userId, approved) — the gateway stores it under the
     // submitter's userId, NOT a MongoDB task _id.
-    const ops = votes.map(({ userId, vote }) => {
+    const ops = completeVotes.map(({ userId, vote }) => {
       const parsedDeadline = vote.deadline ? new Date(vote.deadline) : null;
       const deadlineIsValid = parsedDeadline !== null && !isNaN(parsedDeadline.getTime());
 
