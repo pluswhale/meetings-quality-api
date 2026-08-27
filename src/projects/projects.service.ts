@@ -11,10 +11,7 @@ import { Meeting, MeetingDocument } from '../meetings/schemas/meeting.schema';
 import { Task, TaskDocument } from '../tasks/schemas/task.schema';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
-import {
-  ProjectResponseDto,
-  ProjectDetailResponseDto,
-} from './dto/project-response.dto';
+import { ProjectResponseDto, ProjectDetailResponseDto } from './dto/project-response.dto';
 
 // ─── Internal types ────────────────────────────────────────────────────────────
 
@@ -64,9 +61,7 @@ export class ProjectsService {
    * Called before any read or write on a project or its child resources.
    */
   private assertParticipant(project: ProjectDocument, userId: string): void {
-    const isParticipant = project.participantIds.some(
-      (pid) => resolveId(pid) === userId,
-    );
+    const isParticipant = project.participantIds.some((pid) => resolveId(pid) === userId);
     if (!isParticipant) {
       throw new ForbiddenException('You are not a participant of this project');
     }
@@ -169,11 +164,7 @@ export class ProjectsService {
     // faster at scale, but regex is adequate for the current volume.
     if (search?.trim()) {
       const pattern = new RegExp(search.trim(), 'i');
-      query.$or = [
-        { title: pattern },
-        { goal: pattern },
-        { description: pattern },
-      ];
+      query.$or = [{ title: pattern }, { goal: pattern }, { description: pattern }];
     }
 
     const projects = await this.projectModel
@@ -204,11 +195,7 @@ export class ProjectsService {
     };
   }
 
-  async update(
-    id: string,
-    dto: UpdateProjectDto,
-    userId: string,
-  ): Promise<ProjectResponseDto> {
+  async update(id: string, dto: UpdateProjectDto, userId: string): Promise<ProjectResponseDto> {
     const project = await this.findOneInternal(id);
     this.assertCreator(project, userId);
 
@@ -260,10 +247,7 @@ export class ProjectsService {
    * Verifies that the given projectId exists and the user is a participant.
    * Called from MeetingsService and TasksService before creating child resources.
    */
-  async assertUserCanAccessProject(
-    projectId: string,
-    userId: string,
-  ): Promise<ProjectDocument> {
+  async assertUserCanAccessProject(projectId: string, userId: string): Promise<ProjectDocument> {
     const project = await this.findOneInternal(projectId);
     this.assertParticipant(project, userId);
     return project;

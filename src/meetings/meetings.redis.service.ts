@@ -17,8 +17,8 @@ const KEY = {
   creatorSocket: (id: string) => `mq:meeting:${id}:creator_socket`,
 };
 
-const STATE_TTL = 86_400;   // 24 h
-const DRAFT_TTL = 3_600;    // 1 h
+const STATE_TTL = 86_400; // 24 h
+const DRAFT_TTL = 3_600; // 1 h
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -129,7 +129,10 @@ export class MeetingsRedisService {
     return this.redis.smembers(KEY.submitted(meetingId, phase));
   }
 
-  async getPendingParticipants(meetingId: string, phase: MeetingPhase): Promise<RedisParticipant[]> {
+  async getPendingParticipants(
+    meetingId: string,
+    phase: MeetingPhase,
+  ): Promise<RedisParticipant[]> {
     const [participants, submittedIds] = await Promise.all([
       this.getParticipants(meetingId),
       this.getSubmittedIds(meetingId, phase),
@@ -140,18 +143,30 @@ export class MeetingsRedisService {
 
   // ─── Votes ────────────────────────────────────────────────────────────────
 
-  async setVote(meetingId: string, phase: MeetingPhase, userId: string, vote: unknown): Promise<void> {
+  async setVote(
+    meetingId: string,
+    phase: MeetingPhase,
+    userId: string,
+    vote: unknown,
+  ): Promise<void> {
     const key = KEY.vote(meetingId, phase, userId);
     await this.redis.set(key, JSON.stringify(vote));
     await this.redis.expire(key, STATE_TTL);
   }
 
-  async getVote<T = unknown>(meetingId: string, phase: MeetingPhase, userId: string): Promise<T | null> {
+  async getVote<T = unknown>(
+    meetingId: string,
+    phase: MeetingPhase,
+    userId: string,
+  ): Promise<T | null> {
     const raw = await this.redis.get(KEY.vote(meetingId, phase, userId));
     return raw ? (JSON.parse(raw) as T) : null;
   }
 
-  async getAllVotes<T = unknown>(meetingId: string, phase: MeetingPhase): Promise<{ userId: string; vote: T }[]> {
+  async getAllVotes<T = unknown>(
+    meetingId: string,
+    phase: MeetingPhase,
+  ): Promise<{ userId: string; vote: T }[]> {
     const participants = await this.getParticipants(meetingId);
     const submittedIds = await this.getSubmittedIds(meetingId, phase);
     const userIds = submittedIds.length > 0 ? submittedIds : participants.map((p) => p.userId);
@@ -179,13 +194,22 @@ export class MeetingsRedisService {
 
   // ─── Drafts ───────────────────────────────────────────────────────────────
 
-  async setDraft(meetingId: string, phase: MeetingPhase, userId: string, draft: Record<string, string>): Promise<void> {
+  async setDraft(
+    meetingId: string,
+    phase: MeetingPhase,
+    userId: string,
+    draft: Record<string, string>,
+  ): Promise<void> {
     const key = KEY.draft(meetingId, phase, userId);
     await this.redis.hset(key, draft);
     await this.redis.expire(key, DRAFT_TTL);
   }
 
-  async getDraft(meetingId: string, phase: MeetingPhase, userId: string): Promise<Record<string, string> | null> {
+  async getDraft(
+    meetingId: string,
+    phase: MeetingPhase,
+    userId: string,
+  ): Promise<Record<string, string> | null> {
     const data = await this.redis.hgetall(KEY.draft(meetingId, phase, userId));
     return data && Object.keys(data).length > 0 ? data : null;
   }

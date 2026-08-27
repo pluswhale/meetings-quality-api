@@ -265,7 +265,7 @@ export class MeetingsFlushService {
       const result = await this.taskModel.bulkWrite(ops, { ordered: false });
       this.logger.log(
         `[Flush] TaskPlanning: upserted ${ops.length} task(s) ` +
-        `(inserted=${result.upsertedCount}, modified=${result.modifiedCount})`,
+          `(inserted=${result.upsertedCount}, modified=${result.modifiedCount})`,
       );
     } catch (err) {
       this.logger.error(

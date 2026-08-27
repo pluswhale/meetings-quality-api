@@ -602,352 +602,6 @@
         ]
       }
     },
-    "/meetings/{id}/phase": {
-      "patch": {
-        "operationId": "MeetingsController_changePhase",
-        "summary": "Изменить фазу встречи (только создатель)",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "ID встречи",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ChangePhaseDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Фаза встречи изменена",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MeetingResponseDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Не авторизован"
-          },
-          "403": {
-            "description": "Только создатель может менять фазу"
-          }
-        },
-        "tags": [
-          "meetings"
-        ],
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ]
-      }
-    },
-    "/meetings/{id}/join": {
-      "post": {
-        "operationId": "MeetingsController_joinMeeting",
-        "summary": "[DEPRECATED] Присоединиться к встрече (войти в комнату)",
-        "deprecated": true,
-        "description": "\n      ⚠️ DEPRECATED: Используйте WebSocket event 'join_meeting' вместо этого REST endpoint.\n      \n      Этот endpoint оставлен для обратной совместимости, но не обеспечивает \n      надежное отслеживание присутствия в реальном времени.\n      \n      Для корректной работы голосования используйте Socket.IO:\n      socket.emit('join_meeting', { meetingId })\n    ",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "ID встречи",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Участник присоединился к встрече (устаревший метод)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MeetingResponseDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Не авторизован"
-          },
-          "403": {
-            "description": "Только участники могут присоединиться к встрече"
-          }
-        },
-        "tags": [
-          "meetings"
-        ],
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ]
-      }
-    },
-    "/meetings/{id}/leave": {
-      "post": {
-        "operationId": "MeetingsController_leaveMeeting",
-        "summary": "[DEPRECATED] Покинуть встречу (выйти из комнаты)",
-        "deprecated": true,
-        "description": "\n      ⚠️ DEPRECATED: Используйте WebSocket event 'leave_meeting' вместо этого REST endpoint.\n      \n      Для корректной работы голосования используйте Socket.IO:\n      socket.emit('leave_meeting', { meetingId })\n    ",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "ID встречи",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Участник покинул встречу (устаревший метод)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MeetingResponseDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Не авторизован"
-          }
-        },
-        "tags": [
-          "meetings"
-        ],
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ]
-      }
-    },
-    "/meetings/{id}/emotional-evaluations": {
-      "post": {
-        "operationId": "MeetingsController_submitEmotionalEvaluation",
-        "summary": "Отправить эмоциональную оценку (все участники включая создателя)",
-        "description": "\n      Отправить эмоциональные оценки других участников.\n      \n      ВАЖНО: Голосование полностью опциональное!\n      - Можно отправить пустой массив [] (не голосовать)\n      - Можно отправить оценку только для тех, кого хотите оценить\n      - Можно обновить оценку, отправив новую\n      - Создатель видит все оценки (включая пустые) в /all-submissions\n    ",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "ID встречи",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SubmitEmotionalEvaluationDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Эмоциональная оценка отправлена (может быть пустой)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MeetingResponseDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Не авторизован"
-          }
-        },
-        "tags": [
-          "meetings"
-        ],
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ]
-      }
-    },
-    "/meetings/{id}/understanding-contributions": {
-      "post": {
-        "operationId": "MeetingsController_submitUnderstandingContribution",
-        "summary": "Отправить понимание и вклад (все участники включая создателя)",
-        "description": "\n      Отправить самооценку понимания и распределение вклада участников.\n      \n      ВАЖНО: Голосование полностью опциональное!\n      - Можно отправить пустой массив contributions: [] (не голосовать)\n      - Можно отправить вклад только для тех, кого хотите оценить\n      - Проценты не обязаны суммироваться в 100%\n      - Можно обновить оценку, отправив новую\n      - Создатель видит все оценки (включая пустые) в /all-submissions\n    ",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "ID встречи",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SubmitUnderstandingContributionDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Понимание и вклад отправлены (может быть пустым)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MeetingResponseDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Не авторизован"
-          }
-        },
-        "tags": [
-          "meetings"
-        ],
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ]
-      }
-    },
-    "/meetings/{id}/task-plannings": {
-      "post": {
-        "operationId": "MeetingsController_submitTaskPlanning",
-        "summary": "Отправить планирование задачи (фаза task_planning, все участники включая создателя)",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "ID встречи",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SubmitTaskPlanningDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Планирование задачи отправлено и задача создана",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MeetingResponseDto"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Встреча не в фазе task_planning"
-          },
-          "401": {
-            "description": "Не авторизован"
-          }
-        },
-        "tags": [
-          "meetings"
-        ],
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ]
-      }
-    },
-    "/meetings/{id}/task-evaluations": {
-      "post": {
-        "operationId": "MeetingsController_submitTaskEvaluation",
-        "summary": "Отправить оценки важности задач (все участники включая создателя)",
-        "description": "\n      Отправить оценки важности задач.\n      \n      ВАЖНО: Голосование полностью опциональное!\n      - Можно отправить пустой массив [] (не голосовать)\n      - Можно отправить оценку только для тех задач, которые хотите оценить\n      - Можно обновить оценку, отправив новую\n      - Создатель видит все оценки (включая пустые) в /all-submissions\n    ",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "ID встречи",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SubmitTaskEvaluationDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Оценки задач отправлены (может быть пустым)",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MeetingResponseDto"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Не авторизован"
-          }
-        },
-        "tags": [
-          "meetings"
-        ],
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ]
-      }
-    },
     "/meetings/{id}/task-evaluation-analytics": {
       "get": {
         "operationId": "MeetingsController_getTaskEvaluationAnalytics",
@@ -972,77 +626,6 @@
           },
           "403": {
             "description": "Только создатель может просматривать аналитику"
-          }
-        },
-        "tags": [
-          "meetings"
-        ],
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ]
-      }
-    },
-    "/meetings/{id}/voting-info": {
-      "get": {
-        "operationId": "MeetingsController_getVotingInfo",
-        "summary": "Получить информацию о голосовании с активными участниками (только создатель)",
-        "description": "\n      Возвращает список участников голосования и статус отправки.\n      \n      ВАЖНО: Участниками голосования являются только те пользователи, которые:\n      - Вызвали endpoint /meetings/:id/join (присоединились к встрече)\n      - НЕ вызвали endpoint /meetings/:id/leave (не покинули встречу)\n      \n      Создатель встречи включается в список участников ТОЛЬКО если он присоединился к встрече.\n      Нет специальной логики для создателя - он обрабатывается как обычный участник.\n    ",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "ID встречи",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "\n      Информация о голосовании с участниками на основе join/leave.\n      \n      Структура ответа:\n      - votingParticipants: массив пользователей, активно присоединившихся к встрече\n      - totalVotingParticipants: количество активных участников\n      - submissionStatus: кто уже отправил голос в текущей фазе\n      - votingProgress: прогресс голосования (отправлено/всего)\n    "
-          },
-          "401": {
-            "description": "Не авторизован"
-          },
-          "403": {
-            "description": "Только создатель может просматривать информацию о голосовании"
-          }
-        },
-        "tags": [
-          "meetings"
-        ],
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ]
-      }
-    },
-    "/meetings/{id}/active-participants": {
-      "get": {
-        "operationId": "MeetingsController_getActiveParticipants",
-        "summary": "Получить список активных участников в комнате встречи (Socket.IO-based)",
-        "description": "\n      Возвращает список участников, которые активно подключены через WebSocket.\n      \n      ВАЖНО: Этот endpoint возвращает данные из Socket.IO в реальном времени.\n      Участники отслеживаются через WebSocket соединения:\n      - Добавляются при emit('join_meeting')\n      - Удаляются при emit('leave_meeting') или disconnect\n      \n      Используйте для:\n      - Начальной загрузки списка участников\n      - Проверки статуса подключения\n      \n      Для real-time обновлений подключитесь к Socket.IO и слушайте:\n      socket.on('participants_updated', (data) => { ... })\n    ",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "ID встречи",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Список активных участников на основе WebSocket подключений"
-          },
-          "401": {
-            "description": "Не авторизован"
           }
         },
         "tags": [
@@ -1208,46 +791,6 @@
         ]
       }
     },
-    "/meetings/{id}/pending-voters": {
-      "get": {
-        "operationId": "MeetingsController_getPendingVoters",
-        "summary": "Get active participants who have not voted yet (socket-synced)",
-        "description": "\n      Returns list of active participants (connected via WebSocket) who haven't submitted\n      their response in the current meeting phase.\n      \n      IMPORTANT: This uses real-time Socket.IO data to determine who's active,\n      then filters out those who have already submitted.\n      \n      Only the meeting creator can view this information.\n    ",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "Meeting ID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of pending voters with their connection info"
-          },
-          "401": {
-            "description": "Not authorized"
-          },
-          "403": {
-            "description": "Only creator can view pending voters"
-          },
-          "404": {
-            "description": "Meeting not found"
-          }
-        },
-        "tags": [
-          "meetings"
-        ],
-        "security": [
-          {
-            "JWT-auth": []
-          }
-        ]
-      }
-    },
     "/meetings/test/trigger-activation": {
       "post": {
         "operationId": "MeetingsController_testTriggerActivation",
@@ -1313,8 +856,8 @@
       },
       "get": {
         "operationId": "TasksController_findAll",
-        "summary": "Get tasks for the current user",
-        "description": "Returns tasks authored by the current user. Supports optional filters: status (filter), project scope (projectId), and keyword search on description (search).",
+        "summary": "Get tasks",
+        "description": "When `projectId` is supplied: returns ALL tasks for that project regardless of author. Without `projectId`: returns only the caller's own tasks. Supports optional filters: status (filter) and keyword search on description (search).",
         "parameters": [
           {
             "name": "filter",
@@ -1425,7 +968,7 @@
     "/tasks/{id}": {
       "get": {
         "operationId": "TasksController_findOne",
-        "summary": "Получить задачу по ID",
+        "summary": "Получить задачу по ID (доступно всем авторизованным)",
         "parameters": [
           {
             "name": "id",
@@ -1450,9 +993,6 @@
           },
           "401": {
             "description": "Не авторизован"
-          },
-          "403": {
-            "description": "Можно просматривать только свои задачи"
           },
           "404": {
             "description": "Задача не найдена"
@@ -1949,7 +1489,7 @@
         "properties": {
           "projectId": {
             "type": "string",
-            "description": "Project this meeting belongs to",
+            "description": "Project this meeting belongs to (required)",
             "example": "507f1f77bcf86cd799439050"
           },
           "title": {
@@ -1964,7 +1504,7 @@
           },
           "upcomingDate": {
             "type": "string",
-            "description": "Дата и время встречи",
+            "description": "Дата и время встречи. Если не указано — встреча начинается сразу.",
             "example": "2026-02-11T00:00:00.000Z"
           },
           "participantIds": {
@@ -1977,12 +1517,17 @@
             "items": {
               "type": "string"
             }
+          },
+          "previousMeetingId": {
+            "type": "string",
+            "description": "Link to a previous meeting for Phase 0 retrospective review",
+            "example": "507f1f77bcf86cd799439030"
           }
         },
         "required": [
+          "projectId",
           "title",
-          "question",
-          "upcomingDate"
+          "question"
         ]
       },
       "MeetingParticipantRefDto": {
@@ -2177,6 +1722,12 @@
               "type": "string"
             }
           },
+          "participants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MeetingParticipantRefDto"
+            }
+          },
           "activeParticipantIds": {
             "type": "array",
             "items": {
@@ -2186,9 +1737,11 @@
           "currentPhase": {
             "type": "string",
             "enum": [
+              "retrospective",
               "emotional_evaluation",
               "understanding_contribution",
               "task_planning",
+              "task_evaluation",
               "finished"
             ],
             "example": "emotional_evaluation"
@@ -2201,6 +1754,11 @@
               "finished"
             ],
             "example": "upcoming"
+          },
+          "upcomingDate": {
+            "format": "date-time",
+            "type": "string",
+            "example": "2026-02-11T09:00:00.000Z"
           },
           "emotionalEvaluations": {
             "type": "array",
@@ -2220,6 +1778,20 @@
               "$ref": "#/components/schemas/TaskEvaluationDto"
             }
           },
+          "projectId": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439050",
+            "nullable": true
+          },
+          "previousMeetingId": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439030",
+            "nullable": true
+          },
+          "hasRetrospectivePhase": {
+            "type": "boolean",
+            "example": true
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -2237,12 +1809,17 @@
           "question",
           "creatorId",
           "participantIds",
+          "participants",
           "activeParticipantIds",
           "currentPhase",
           "status",
+          "upcomingDate",
           "emotionalEvaluations",
           "understandingContributions",
           "taskEvaluations",
+          "projectId",
+          "previousMeetingId",
+          "hasRetrospectivePhase",
           "createdAt",
           "updatedAt"
         ]
@@ -2269,185 +1846,13 @@
             "items": {
               "type": "string"
             }
+          },
+          "upcomingDate": {
+            "type": "string",
+            "description": "Новая дата и время встречи. Статус пересчитывается: будущая дата возвращает встречу в upcoming, прошедшая — в active.",
+            "example": "2026-02-11T09:00:00.000Z"
           }
         }
-      },
-      "ChangePhaseDto": {
-        "type": "object",
-        "properties": {
-          "phase": {
-            "type": "string",
-            "description": "Новая фаза встречи",
-            "enum": [
-              "emotional_evaluation",
-              "understanding_contribution",
-              "task_planning",
-              "finished"
-            ],
-            "example": "emotional_evaluation"
-          }
-        },
-        "required": [
-          "phase"
-        ]
-      },
-      "ParticipantEmotionalEvaluationDto": {
-        "type": "object",
-        "properties": {
-          "targetParticipantId": {
-            "type": "string",
-            "description": "ID участника, которого оценивают",
-            "example": "507f1f77bcf86cd799439012"
-          },
-          "emotionalScale": {
-            "type": "number",
-            "description": "Эмоциональная оценка от -100 (негативная) до 100 (позитивная)",
-            "example": 80,
-            "minimum": -100,
-            "maximum": 100
-          },
-          "isToxic": {
-            "type": "boolean",
-            "description": "Флаг токсичности участника",
-            "example": false
-          }
-        },
-        "required": [
-          "targetParticipantId",
-          "emotionalScale",
-          "isToxic"
-        ]
-      },
-      "SubmitEmotionalEvaluationDto": {
-        "type": "object",
-        "properties": {
-          "evaluations": {
-            "description": "Эмоциональные оценки других участников (можно отправить пустой массив - голосование полностью опциональное)",
-            "example": [],
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ParticipantEmotionalEvaluationDto"
-            }
-          }
-        },
-        "required": [
-          "evaluations"
-        ]
-      },
-      "ContributionInfluenceDto": {
-        "type": "object",
-        "properties": {
-          "participantId": {
-            "type": "string",
-            "description": "ID участника",
-            "example": "507f1f77bcf86cd799439012"
-          },
-          "contributionPercentage": {
-            "type": "number",
-            "description": "Процент вклада участника в обсуждение (0-100)",
-            "example": 60,
-            "minimum": 0,
-            "maximum": 100
-          }
-        },
-        "required": [
-          "participantId",
-          "contributionPercentage"
-        ]
-      },
-      "SubmitUnderstandingContributionDto": {
-        "type": "object",
-        "properties": {
-          "understandingScore": {
-            "type": "number",
-            "description": "Самооценка понимания задачи (0-100)",
-            "example": 85,
-            "minimum": 0,
-            "maximum": 100
-          },
-          "contributions": {
-            "description": "Распределение вклада участников в обсуждение (можно отправить пустой массив - голосование полностью опциональное)",
-            "example": [],
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ContributionInfluenceDto"
-            }
-          }
-        },
-        "required": [
-          "understandingScore",
-          "contributions"
-        ]
-      },
-      "SubmitTaskPlanningDto": {
-        "type": "object",
-        "properties": {
-          "taskDescription": {
-            "type": "string",
-            "description": "Описание задачи",
-            "example": "Реализовать аутентификацию пользователей"
-          },
-          "commonQuestion": {
-            "type": "string",
-            "description": "Общий вопрос задачи",
-            "example": "Какие технологии использовать?"
-          },
-          "deadline": {
-            "type": "string",
-            "description": "Дедлайн задачи (ISO формат)",
-            "example": "2026-02-01T00:00:00.000Z"
-          },
-          "expectedContributionPercentage": {
-            "type": "number",
-            "description": "Ожидаемый процент вклада в задачу (0-100)",
-            "example": 90,
-            "minimum": 0,
-            "maximum": 100
-          }
-        },
-        "required": [
-          "taskDescription",
-          "commonQuestion",
-          "deadline",
-          "expectedContributionPercentage"
-        ]
-      },
-      "TaskImportanceEvaluationDto": {
-        "type": "object",
-        "properties": {
-          "taskAuthorId": {
-            "type": "string",
-            "description": "ID автора задачи, которую оценивают",
-            "example": "507f1f77bcf86cd799439011"
-          },
-          "importanceScore": {
-            "type": "number",
-            "description": "Оценка важности задачи (0-100)",
-            "example": 75,
-            "minimum": 0,
-            "maximum": 100
-          }
-        },
-        "required": [
-          "taskAuthorId",
-          "importanceScore"
-        ]
-      },
-      "SubmitTaskEvaluationDto": {
-        "type": "object",
-        "properties": {
-          "evaluations": {
-            "description": "Массив оценок важности задач (можно отправить пустой массив - голосование полностью опциональное)",
-            "example": [],
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/TaskImportanceEvaluationDto"
-            }
-          }
-        },
-        "required": [
-          "evaluations"
-        ]
       },
       "ParticipantStatDto": {
         "type": "object",

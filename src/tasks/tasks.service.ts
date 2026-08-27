@@ -59,9 +59,7 @@ function isPopulatedAuthor(value: unknown): value is PopulatedAuthor {
  * Extracts the ObjectId from an authorId field that may be either a raw
  * ObjectId (before populate) or a populated author document (after populate).
  */
-function resolveAuthorObjectId(
-  authorId: Types.ObjectId | PopulatedAuthor,
-): Types.ObjectId {
+function resolveAuthorObjectId(authorId: Types.ObjectId | PopulatedAuthor): Types.ObjectId {
   return isPopulatedAuthor(authorId) ? authorId._id : authorId;
 }
 
@@ -69,9 +67,11 @@ function resolveAuthorObjectId(
  * Resolves an authorId field into a serialisable author ref object.
  * Returns null-safe name and email when the field is not populated.
  */
-function resolveAuthorRef(
-  authorId: Types.ObjectId | PopulatedAuthor,
-): { _id: string; fullName: string | null; email: string | null } {
+function resolveAuthorRef(authorId: Types.ObjectId | PopulatedAuthor): {
+  _id: string;
+  fullName: string | null;
+  email: string | null;
+} {
   if (isPopulatedAuthor(authorId)) {
     return {
       _id: authorId._id.toString(),
@@ -192,11 +192,7 @@ export class TasksService {
 
   // ─── Update ───────────────────────────────────────────────────────────────
 
-  async update(
-    id: string,
-    updateTaskDto: UpdateTaskDto,
-    userId: string,
-  ): Promise<TaskDocument> {
+  async update(id: string, updateTaskDto: UpdateTaskDto, userId: string): Promise<TaskDocument> {
     const task = await this.findOne(id);
 
     // Ownership is enforced here: only the task author may mutate it.
@@ -233,7 +229,8 @@ export class TasksService {
     const hasContentChange =
       (updateTaskDto.description !== undefined && updateTaskDto.description !== task.description) ||
       (updateTaskDto.deadline !== undefined && incomingDeadlineMs !== deadlineMs) ||
-      (updateTaskDto.estimateHours !== undefined && updateTaskDto.estimateHours !== task.estimateHours) ||
+      (updateTaskDto.estimateHours !== undefined &&
+        updateTaskDto.estimateHours !== task.estimateHours) ||
       (updateTaskDto.contributionImportance !== undefined &&
         updateTaskDto.contributionImportance !== task.contributionImportance);
 
@@ -264,11 +261,7 @@ export class TasksService {
       .populate('meetingId', 'title question')
       .exec();
 
-    this.meetingsGateway.emitMeetingUpdated(
-      task.meetingId.toString(),
-      'task_updated',
-      userId,
-    );
+    this.meetingsGateway.emitMeetingUpdated(task.meetingId.toString(), 'task_updated', userId);
 
     return saved as TaskDocument;
   }
@@ -338,11 +331,7 @@ export class TasksService {
     // and fail on legacy tasks with empty required fields.
     await this.taskModel.updateOne({ _id: taskId }, { $set: { approved } }).exec();
 
-    this.meetingsGateway.emitMeetingUpdated(
-      task.meetingId.toString(),
-      'task_approved',
-      userId,
-    );
+    this.meetingsGateway.emitMeetingUpdated(task.meetingId.toString(), 'task_approved', userId);
 
     const authorRef = resolveAuthorRef(
       task.authorId as unknown as Types.ObjectId | PopulatedAuthor,

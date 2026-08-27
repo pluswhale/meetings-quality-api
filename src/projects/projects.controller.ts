@@ -149,10 +149,7 @@ export class ProjectsController {
   @ApiParam({ name: 'id', description: 'Project ID' })
   @ApiResponse({ status: 204, description: 'Project deleted' })
   @ApiResponse({ status: 403, description: 'Only the project creator can delete it' })
-  remove(
-    @Param('id') id: string,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<void> {
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser): Promise<void> {
     return this.projectsService.remove(id, user.userId);
   }
 }

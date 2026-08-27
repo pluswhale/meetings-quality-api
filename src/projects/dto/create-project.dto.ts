@@ -1,11 +1,4 @@
-import {
-  IsNotEmpty,
-  IsString,
-  IsOptional,
-  IsArray,
-  IsMongoId,
-  MaxLength,
-} from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsArray, IsMongoId, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateProjectDto {

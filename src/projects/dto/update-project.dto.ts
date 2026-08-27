@@ -1,11 +1,4 @@
-import {
-  IsOptional,
-  IsString,
-  IsArray,
-  IsMongoId,
-  IsEnum,
-  MaxLength,
-} from 'class-validator';
+import { IsOptional, IsString, IsArray, IsMongoId, IsEnum, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { ProjectStatus } from '../schemas/project.schema';
 

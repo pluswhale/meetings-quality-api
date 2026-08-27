@@ -218,15 +218,11 @@ export class MeetingsService {
         throw new BadRequestException('Предыдущая встреча не найдена');
       }
       if (!prev.projectId || !prev.projectId.equals(projectObjectId)) {
-        throw new BadRequestException(
-          'Связанная встреча должна принадлежать тому же проекту',
-        );
+        throw new BadRequestException('Связанная встреча должна принадлежать тому же проекту');
       }
       // Prevent double-linking (a meeting can have at most one successor).
       if (prev.nextMeetingId) {
-        throw new BadRequestException(
-          'У выбранной встречи уже есть продолжение',
-        );
+        throw new BadRequestException('У выбранной встречи уже есть продолжение');
       }
     }
 
@@ -406,9 +402,7 @@ export class MeetingsService {
     try {
       await this.meetingsRedisService.clearMeetingState(id);
     } catch (err) {
-      this.logger.warn(
-        `Failed to clear Redis state for meeting ${id}: ${(err as Error).message}`,
-      );
+      this.logger.warn(`Failed to clear Redis state for meeting ${id}: ${(err as Error).message}`);
     }
   }
 

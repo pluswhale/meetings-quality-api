@@ -50,7 +50,7 @@ export class TasksController {
     summary: 'Get tasks',
     description:
       'When `projectId` is supplied: returns ALL tasks for that project regardless of author. ' +
-      'Without `projectId`: returns only the caller\'s own tasks. ' +
+      "Without `projectId`: returns only the caller's own tasks. " +
       'Supports optional filters: status (filter) and keyword search on description (search).',
   })
   @ApiQuery({
