@@ -110,6 +110,43 @@ function resolveUserRef(field: Types.ObjectId | PopulatedUser | unknown): Partic
 }
 
 /**
+ * A meeting scheduled in the future is upcoming; one scheduled at or before now
+ * is already under way. Shared by creation and rescheduling so both derive the
+ * status from the same rule.
+ */
+function deriveStatusFromDate(upcomingDate: Date, now: Date = new Date()): MeetingStatus {
+  return upcomingDate > now ? MeetingStatus.UPCOMING : MeetingStatus.ACTIVE;
+}
+
+/**
+ * Resolves a meeting's invited participants into user refs.
+ *
+ * The creator is unioned in rather than assumed present: meetings created
+ * before that rule was enforced can omit them from participantIds, and a
+ * roster that silently drops the creator is worse than a duplicate.
+ */
+function resolveInvitedParticipants(meeting: MeetingDocument): ParticipantRefDto[] {
+  const refs = [
+    resolveUserRef(meeting.creatorId),
+    ...(meeting.participantIds as unknown as Array<PopulatedUser | Types.ObjectId>).map((p) =>
+      resolveUserRef(p),
+    ),
+  ];
+
+  const byId = new Map<string, ParticipantRefDto>();
+  for (const ref of refs) {
+    // A populated ref carries a name; keep it in preference to a bare-ID ref
+    // for the same user.
+    const existing = byId.get(ref._id);
+    if (!existing || (existing.fullName === null && ref.fullName !== null)) {
+      byId.set(ref._id, ref);
+    }
+  }
+
+  return [...byId.values()];
+}
+
+/**
  * Like resolveUserRef but omits email — used for nested refs where only the
  * name is needed (e.g. per-evaluation target refs).
  */
@@ -164,8 +201,7 @@ export class MeetingsService {
       ? new Date(createMeetingDto.upcomingDate)
       : now;
 
-    const status: MeetingStatus =
-      upcomingDate > now ? MeetingStatus.UPCOMING : MeetingStatus.ACTIVE;
+    const status = deriveStatusFromDate(upcomingDate, now);
 
     // projectId is now required — guaranteed non-null by the DTO decorator.
     const projectObjectId = new Types.ObjectId(createMeetingDto.projectId);
@@ -305,6 +341,8 @@ export class MeetingsService {
       title: string;
       question: string;
       participantIds: Types.ObjectId[];
+      upcomingDate: Date;
+      status: MeetingStatus;
     }> = {};
 
     if (dto.title !== undefined) updatePayload.title = dto.title;
@@ -318,8 +356,26 @@ export class MeetingsService {
       updatePayload.participantIds = [...participantSet].map((p) => new Types.ObjectId(p));
     }
 
+    let isRescheduled = false;
+    if (dto.upcomingDate !== undefined) {
+      const upcomingDate = new Date(dto.upcomingDate);
+      isRescheduled = upcomingDate.getTime() !== meeting.upcomingDate?.getTime();
+      updatePayload.upcomingDate = upcomingDate;
+
+      // A finished meeting is terminal — rescheduling must not reopen it.
+      if (meeting.status !== MeetingStatus.FINISHED) {
+        updatePayload.status = deriveStatusFromDate(upcomingDate);
+      }
+    }
+
     Object.assign(meeting, updatePayload);
     const saved = await meeting.save();
+
+    // Tell clients in the room so they see the new time without reloading.
+    if (isRescheduled) {
+      this.meetingsGateway.emitMeetingUpdated(id, 'meeting_rescheduled', userId);
+    }
+
     return this.transformMeetingResponse(saved);
   }
 
@@ -1181,11 +1237,13 @@ export class MeetingsService {
       participantIds: (
         meeting.participantIds as unknown as Array<PopulatedUser | Types.ObjectId>
       ).map((p) => resolveId(p)),
+      participants: resolveInvitedParticipants(meeting),
       activeParticipantIds: meeting.activeParticipants.map((ap) =>
         resolveUserRef(ap.participantId),
       ),
       currentPhase: meeting.currentPhase,
       status: meeting.status,
+      upcomingDate: meeting.upcomingDate,
       emotionalEvaluations: meeting.emotionalEvaluations.map((e) => ({
         participant: resolveUserRef(e.participantId),
         evaluations: e.evaluations.map((ev) => ({

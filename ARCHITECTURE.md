@@ -262,7 +262,27 @@ CREATED ──────────────────► UPCOMING ─�
 
 A meeting is automatically set to `active` when:
 - The creator creates it with a date in the past or present, **or**
-- The scheduled `upcomingDate` is reached (via a background job)
+- The scheduled `upcomingDate` is reached (via a background job), **or**
+- The creator joins the meeting room (they may start early)
+
+### 5.1a Rescheduling
+
+The creator can change `upcomingDate` after creation via `PATCH /meetings/:id`.
+The status is then re-derived from the new date using the same rule as creation:
+
+| New date | Resulting status |
+|---|---|
+| In the future | `upcoming` — the meeting returns to the upcoming list even if it was already `active` |
+| Now or in the past | `active` |
+| (any) on a `finished` meeting | `finished` — finishing is terminal, rescheduling never reopens a meeting |
+
+Rescheduling preserves participants, the current phase, and all submissions. The
+background activation job needs no special handling: it only promotes `upcoming`
+meetings whose date has passed, so a meeting moved back to `upcoming` is skipped
+until its new time arrives.
+
+Connected clients are notified with a `meetingUpdated` event of type
+`meeting_rescheduled`. There is no email or push notification — see §8.
 
 ---
 
@@ -411,7 +431,7 @@ The system has two implicit roles within a meeting:
 | `/meetings` | POST | Any | Create a new meeting |
 | `/meetings` | GET | Any | List meetings (filter: `current` / `past` / `upcoming`) |
 | `/meetings/:id` | GET | Any | Get meeting details |
-| `/meetings/:id` | PATCH | Creator | Update title, question, or participant list |
+| `/meetings/:id` | PATCH | Creator | Update title, question, participant list, or scheduled date/time |
 | `/meetings/:id` | DELETE | Creator | Delete meeting permanently |
 | `/meetings/:id/phase` | PATCH | Creator | Advance to a specific phase |
 
@@ -468,18 +488,32 @@ The platform uses **Socket.IO** for real-time presence and event broadcasting. A
 
 | Event | Payload | Description |
 |---|---|---|
-| `join_meeting` | `{ meetingId }` | Join the meeting room; marks user as active |
-| `leave_meeting` | `{ meetingId }` | Leave the meeting room; marks user as inactive |
+| `room:join` | `{ meetingId }` | Join the meeting room; marks user as active. Server replies with `room:state_sync` |
+| `room:leave` | `{ meetingId }` | Leave the meeting room; marks user as inactive |
+| `user:update_live_vote` | `{ meetingId, phase, payload }` | Persist the current phase answers |
+| `admin:advance_phase` | `{ meetingId, toPhase }` | Creator moves the meeting to another phase |
+| `admin:approve_task` | `{ meetingId, taskId, approved }` | Creator approves / unapproves a task |
+| `admin:finish_meeting` | `{ meetingId }` | Creator finishes the meeting |
 
 ### 8.2 Server → Client Events
 
 | Event | Triggered by | Description |
 |---|---|---|
-| `phase_changed` | Creator advances phase | New `phase` and `status` values |
-| `meeting_updated` | Any submission | Notifies all room members of a change |
-| `participant_joined` | User joins room | New participant appeared |
-| `participant_left` | User leaves room | Participant disconnected |
-| `participants_updated` | Join or leave | Full updated list of active participants |
+| `room:state_sync` | `room:join` | Full current state, sent to the joining client only. Used for recovery after missed events |
+| `room:phase_changed` | Creator advances phase | New `phase` and the `previousPhase` |
+| `room:participants_updated` | Join, leave, or disconnect | Full updated list of connected participants |
+| `room:pending_voters_updated` | Vote update or disconnect | Who still has to answer in this phase |
+| `room:vote_updated` | Any participant updates their answers | The updated payload, broadcast to the room |
+| `room:task_approval_updated` | Creator approves / unapproves | Approval state for a task |
+| `meetingUpdated` | Submission or reschedule | Change signal with a `type` (e.g. `meeting_rescheduled`) |
+
+> These are the names the gateway actually emits. Earlier revisions of this
+> document listed `join_meeting`, `phase_changed`, `meeting_updated`, and
+> `participant_joined` / `participant_left`; those are not in use.
+
+Clients must not assume they receive every event: a client that was
+disconnected or suspended recovers by re-sending `room:join` and using the
+`room:state_sync` reply as the authoritative state.
 
 ### 8.3 Presence Tracking
 

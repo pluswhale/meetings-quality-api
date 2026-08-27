@@ -32,12 +32,13 @@ export class CreateMeetingDto {
   question: string;
 
   @ApiProperty({
-    description: 'Дата и время встречи',
+    description: 'Дата и время встречи. Если не указано — встреча начинается сразу.',
     example: '2026-02-11T00:00:00.000Z',
+    required: false,
   })
   @IsOptional()
   @IsString()
-  upcomingDate: string;
+  upcomingDate?: string;
 
   @ApiProperty({
     description: 'ID участников встречи',

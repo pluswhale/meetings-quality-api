@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsArray } from 'class-validator';
+import { IsOptional, IsString, IsArray, IsDateString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateMeetingDto {
@@ -30,4 +30,14 @@ export class UpdateMeetingDto {
   @IsArray()
   @IsString({ each: true })
   participantIds?: string[];
+
+  @ApiProperty({
+    description:
+      'Новая дата и время встречи. Статус пересчитывается: будущая дата возвращает встречу в upcoming, прошедшая — в active.',
+    example: '2026-02-11T09:00:00.000Z',
+    required: false,
+  })
+  @IsOptional()
+  @IsDateString()
+  upcomingDate?: string;
 }

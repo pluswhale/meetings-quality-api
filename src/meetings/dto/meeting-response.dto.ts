@@ -119,6 +119,15 @@ export class MeetingResponseDto {
   participantIds: string[];
 
   /**
+   * The same invited participants as participantIds, resolved to user refs so
+   * clients can render a roster without cross-referencing GET /users. Always
+   * includes the creator. participantIds is retained for callers that only
+   * need the raw IDs.
+   */
+  @ApiProperty({ type: [MeetingParticipantRefDto] })
+  participants: MeetingParticipantRefDto[];
+
+  /**
    * Named activeParticipantIds for API compatibility, but the value is an array
    * of populated user refs (not bare IDs) sourced from meeting.activeParticipants.
    */
@@ -130,6 +139,9 @@ export class MeetingResponseDto {
 
   @ApiProperty({ enum: MeetingStatus, example: MeetingStatus.UPCOMING })
   status: MeetingStatus;
+
+  @ApiProperty({ example: '2026-02-11T09:00:00.000Z' })
+  upcomingDate: Date;
 
   @ApiProperty({ type: [EmotionalEvaluationDto] })
   emotionalEvaluations: EmotionalEvaluationDto[];
