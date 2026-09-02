@@ -1659,6 +1659,10 @@
             "type": "string",
             "example": "507f1f77bcf86cd799439011"
           },
+          "taskId": {
+            "type": "string",
+            "example": "507f1f77bcf86cd799439030"
+          },
           "importanceScore": {
             "type": "number",
             "example": 75,
@@ -1667,7 +1671,6 @@
           }
         },
         "required": [
-          "taskAuthorId",
           "importanceScore"
         ]
       },
@@ -1760,6 +1763,11 @@
             "type": "string",
             "example": "2026-02-11T09:00:00.000Z"
           },
+          "conclusions": {
+            "type": "string",
+            "example": "Договорились сосредоточиться на онбординге и закрыть долги по релизам.",
+            "description": "Выводы встречи — заполняет организатор на этапе планирования задач."
+          },
           "emotionalEvaluations": {
             "type": "array",
             "items": {
@@ -1814,6 +1822,7 @@
           "currentPhase",
           "status",
           "upcomingDate",
+          "conclusions",
           "emotionalEvaluations",
           "understandingContributions",
           "taskEvaluations",
@@ -2062,6 +2071,10 @@
           "isCompleted": {
             "type": "boolean",
             "example": false
+          },
+          "taskKey": {
+            "type": "string",
+            "example": "a3f1c2e0-4b9d-4c11-8e2a-1b0d9f7a6c55"
           },
           "createdAt": {
             "format": "date-time",

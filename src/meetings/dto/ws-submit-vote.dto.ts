@@ -8,6 +8,7 @@ import {
   IsBoolean,
   IsOptional,
   IsISO8601,
+  IsNotEmpty,
   Min,
   Max,
 } from 'class-validator';
@@ -74,6 +75,29 @@ export class WsSubmitUnderstandingVoteDto {
   contributions: WsContributionItemDto[];
 }
 
+export class WsTaskPlanningItemDto {
+  @IsString()
+  @IsNotEmpty()
+  taskKey: string;
+
+  @IsString()
+  @IsNotEmpty()
+  description: string;
+
+  @IsISO8601()
+  deadline: string;
+
+  @IsNumber()
+  @Min(0)
+  estimateHours: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  expectedContributionPercentage?: number;
+}
+
 export class WsSubmitTaskPlanningDto {
   @IsMongoId()
   meetingId: string;
@@ -81,28 +105,49 @@ export class WsSubmitTaskPlanningDto {
   @IsEnum(MeetingPhase)
   phase: typeof MeetingPhase.TASK_PLANNING;
 
-  @IsString()
-  taskDescription: string;
+  /**
+   * New shape: one or more tasks, each identified by a client-minted taskKey.
+   * Preferred going forward. When present, each item MUST have a taskKey.
+   */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => WsTaskPlanningItemDto)
+  tasks?: WsTaskPlanningItemDto[];
 
+  // Legacy single-task fields — accepted until the frontend ships the list shape.
+  @IsOptional()
   @IsString()
-  commonQuestion: string;
+  taskDescription?: string;
 
+  @IsOptional()
+  @IsString()
+  commonQuestion?: string;
+
+  @IsOptional()
   @IsISO8601()
-  deadline: string;
+  deadline?: string;
 
+  @IsOptional()
   @IsNumber()
   @Min(0)
   @Max(100)
-  expectedContributionPercentage: number;
+  expectedContributionPercentage?: number;
 
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  estimateHours: number;
+  estimateHours?: number;
 }
 
 export class WsTaskEvalItemDto {
+  @IsOptional()
   @IsMongoId()
-  taskAuthorId: string;
+  taskId?: string;
+
+  @IsOptional()
+  @IsMongoId()
+  taskAuthorId?: string;
 
   @IsNumber()
   @Min(0)

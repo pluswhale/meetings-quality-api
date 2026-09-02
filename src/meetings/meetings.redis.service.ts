@@ -15,6 +15,7 @@ const KEY = {
     `mq:meeting:${id}:phase:${phase}:vote:${userId}`,
   retro: (id: string) => `mq:meeting:${id}:retro`,
   creatorSocket: (id: string) => `mq:meeting:${id}:creator_socket`,
+  conclusions: (id: string) => `mq:meeting:${id}:conclusions`,
 };
 
 const STATE_TTL = 86_400; // 24 h
@@ -190,6 +191,60 @@ export class MeetingsRedisService {
     if (submittedIds.length === 0) return;
     const keys = submittedIds.map((uid) => KEY.vote(meetingId, phase, uid));
     await this.redis.del(...keys);
+  }
+
+  /**
+   * Votes for every phase that currently has submissions. Used to hydrate
+   * a joining client with the full meeting so far, not only the live phase.
+   */
+  async getVotesByPhase(
+    meetingId: string,
+  ): Promise<Record<string, { userId: string; vote: unknown }[]>> {
+    const phases = Object.values(MeetingPhase).filter((p) => p !== MeetingPhase.FINISHED);
+    const entries = await Promise.all(
+      phases.map(async (phase) => {
+        const votes = await this.getAllVotes(meetingId, phase);
+        return [phase, votes] as const;
+      }),
+    );
+    return Object.fromEntries(entries.filter(([, votes]) => votes.length > 0));
+  }
+
+  /**
+   * Extends TTL on every key belonging to this meeting so a long session
+   * cannot lose its earliest phase mid-way.
+   */
+  async refreshMeetingTtl(meetingId: string): Promise<void> {
+    let cursor = '0';
+    do {
+      const [next, keys] = await this.redis.scan(
+        cursor,
+        'MATCH',
+        `mq:meeting:${meetingId}:*`,
+        'COUNT',
+        100,
+      );
+      cursor = next;
+      if (keys.length > 0) {
+        const pipeline = this.redis.pipeline();
+        for (const key of keys) {
+          pipeline.expire(key, STATE_TTL);
+        }
+        await pipeline.exec();
+      }
+    } while (cursor !== '0');
+  }
+
+  // ─── Conclusions («Выводы встречи») ──────────────────────────────────────
+
+  async setConclusions(meetingId: string, text: string): Promise<void> {
+    const key = KEY.conclusions(meetingId);
+    await this.redis.set(key, text);
+    await this.redis.expire(key, STATE_TTL);
+  }
+
+  async getConclusions(meetingId: string): Promise<string> {
+    return (await this.redis.get(KEY.conclusions(meetingId))) ?? '';
   }
 
   // ─── Drafts ───────────────────────────────────────────────────────────────

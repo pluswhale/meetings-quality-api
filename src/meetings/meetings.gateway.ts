@@ -24,6 +24,7 @@ import {
   WsAdvancePhaseDto,
   WsApproveTaskDto,
   WsFinishMeetingDto,
+  WsUpdateConclusionsDto,
 } from './dto/ws-advance-phase.dto';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -157,7 +158,9 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     const meeting = await this.meetingModel
       .findById(meetingId)
-      .select('participantIds creatorId status currentPhase previousMeetingId projectId')
+      .select(
+        'participantIds creatorId status currentPhase previousMeetingId projectId conclusions',
+      )
       .lean<{
         participantIds: Types.ObjectId[];
         creatorId: Types.ObjectId;
@@ -165,6 +168,7 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
         currentPhase: MeetingPhase;
         previousMeetingId: Types.ObjectId | null;
         projectId: Types.ObjectId | null;
+        conclusions?: string;
       }>()
       .exec();
 
@@ -244,21 +248,31 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     // ── Build state-sync payload ─────────────────────────────────────────────
     // All users receive current votes so the live panel hydrates on join/reconnect.
-    const [participants, submittedIds, myDraft, retroStatuses, currentVotes, taskApprovals] =
-      await Promise.all([
-        this.redisService.getParticipants(meetingId),
-        this.redisService.getSubmittedIds(meetingId, hotState.phase),
-        this.redisService.getDraft(meetingId, hotState.phase, userId),
-        meeting.previousMeetingId
-          ? this.redisService.getAllRetroStatuses(meetingId)
-          : Promise.resolve([] as RetroTaskStatus[]),
-        this.redisService.getAllVotes<Record<string, unknown>>(
-          meetingId,
-          hotState.phase as MeetingPhase,
-        ),
-        // Approvals are relevant during task_planning but safe to always include.
-        this.redisService.getAllTaskApprovals(meetingId),
-      ]);
+    const [
+      participants,
+      submittedIds,
+      myDraft,
+      retroStatuses,
+      currentVotes,
+      taskApprovals,
+      votesByPhaseRaw,
+      liveConclusions,
+    ] = await Promise.all([
+      this.redisService.getParticipants(meetingId),
+      this.redisService.getSubmittedIds(meetingId, hotState.phase),
+      this.redisService.getDraft(meetingId, hotState.phase, userId),
+      meeting.previousMeetingId
+        ? this.redisService.getAllRetroStatuses(meetingId)
+        : Promise.resolve([] as RetroTaskStatus[]),
+      this.redisService.getAllVotes<Record<string, unknown>>(
+        meetingId,
+        hotState.phase as MeetingPhase,
+      ),
+      // Approvals are relevant during task_planning but safe to always include.
+      this.redisService.getAllTaskApprovals(meetingId),
+      this.redisService.getVotesByPhase(meetingId),
+      this.redisService.getConclusions(meetingId),
+    ]);
 
     const pendingIds = new Set(submittedIds);
     const pendingUserIds = participants
@@ -299,6 +313,25 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
       };
     }
 
+    type VoteEntry = {
+      payload: Record<string, unknown>;
+      fullName: string | null;
+      updatedAt: string;
+    };
+    const votesByPhase: Record<string, Record<string, VoteEntry>> = {};
+    for (const [phase, votes] of Object.entries(votesByPhaseRaw)) {
+      const phaseMap: Record<string, VoteEntry> = {};
+      for (const { userId: voteUserId, vote } of votes) {
+        const participant = participants.find((p) => p.userId === voteUserId);
+        phaseMap[voteUserId] = {
+          payload: vote as Record<string, unknown>,
+          fullName: participant?.fullName ?? null,
+          updatedAt: hydrationTs,
+        };
+      }
+      votesByPhase[phase] = phaseMap;
+    }
+
     const stateSync = {
       meetingId,
       phase: hotState.phase,
@@ -312,8 +345,11 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
       retroStatuses,
       isCreator: isCreatorJoining,
       previousMeetingId: meeting.previousMeetingId?.toString() ?? null,
-      // Live votes map for instant panel hydration on reconnect.
+      // Live votes map for instant panel hydration on reconnect (current phase).
       votes: votesMap,
+      // All phases — new clients prefer this; `votes` is kept for one release.
+      votesByPhase,
+      conclusions: liveConclusions || meeting.conclusions || '',
       // Task approval flags — always sent so the admin panel hydrates correctly.
       taskApprovals,
     };
@@ -438,6 +474,9 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
     if (!meetingId || !phase || !payload) {
       return this.ack(false, 'meetingId, phase, and payload are required');
     }
+
+    const payloadError = this.validateLiveVotePayload(phase, payload);
+    if (payloadError) return this.ack(false, payloadError);
 
     const hotState = await this.redisService.getHotState(meetingId);
     if (!hotState) return this.ack(false, 'Meeting not active');
@@ -598,8 +637,8 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     if (isFinishing) {
       // Delegate entirely to finishMeeting which handles: flush + DB seal + Redis update.
-      // We already flushed above, but finishMeeting will only flush again if no-op
-      // (the votes were deleted after the first flush, so the second pass is safe).
+      // We already flushed above; finishMeeting flushes again, which is now
+      // idempotent because votes are retained and the flush pull-then-pushes.
       await this.redisService.setHotState(
         meetingId,
         MeetingPhase.FINISHED,
@@ -622,6 +661,8 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
       previousPhase: currentPhase,
     });
 
+    await this.redisService.refreshMeetingTtl(meetingId);
+
     this.logger.log(`[PHASE] ${meetingId}: ${currentPhase} → ${toPhase}`);
     return this.ack(true, undefined, { phase: toPhase });
   }
@@ -634,34 +675,60 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
     @MessageBody() data: WsApproveTaskDto,
   ) {
     const userId = this.requireAuth(client);
-    const { meetingId, taskId, approved } = data;
+    const { meetingId, taskId, approved, authorUserId } = data;
 
     const meeting = await this.assertCreator(meetingId, userId, client);
     if (!meeting) return this.ack(false, 'Forbidden');
 
-    await this.redisService.setTaskApproval(meetingId, taskId, approved);
+    const ownerId = authorUserId || taskId;
+    const approvalKey =
+      authorUserId && authorUserId !== taskId ? `${authorUserId}:${taskId}` : taskId;
+    await this.redisService.setTaskApproval(meetingId, approvalKey, approved);
 
     const room = roomName(meetingId);
-    // Broadcast to the whole room so progress indicators stay in sync.
     this.server.to(room).emit('room:task_approval_updated', {
       meetingId,
       taskId,
+      authorUserId: ownerId,
       approved,
     });
 
-    // Emit directly to the affected participant (taskId === their userId)
-    // so they see approval in real-time without a REST round-trip.
     const participants = await this.redisService.getParticipants(meetingId);
-    const target = participants.find((p) => p.userId === taskId);
+    const target = participants.find((p) => p.userId === ownerId);
     if (target?.socketId) {
       this.server.to(target.socketId).emit('room:task_approved', {
         meetingId,
-        userId: taskId,
+        userId: ownerId,
+        taskKey: taskId,
         approved,
       });
     }
 
-    this.logger.log(`[APPROVE] userId=${taskId} approved=${approved} in ${meetingId}`);
+    this.logger.log(`[APPROVE] key=${approvalKey} approved=${approved} in ${meetingId}`);
+    return this.ack(true);
+  }
+
+  // ─── admin:update_conclusions ─────────────────────────────────────────────
+
+  @SubscribeMessage('admin:update_conclusions')
+  async handleUpdateConclusions(
+    @ConnectedSocket() client: AuthenticatedSocket,
+    @MessageBody() data: WsUpdateConclusionsDto,
+  ) {
+    const userId = this.requireAuth(client);
+    const { meetingId, conclusions } = data;
+
+    const meeting = await this.assertCreator(meetingId, userId, client);
+    if (!meeting) return this.ack(false, 'Forbidden');
+
+    await this.redisService.setConclusions(meetingId, conclusions);
+    await this.meetingModel.findByIdAndUpdate(meetingId, { $set: { conclusions } });
+
+    this.server.to(roomName(meetingId)).emit('room:conclusions_updated', {
+      meetingId,
+      conclusions,
+    });
+
     return this.ack(true);
   }
 
@@ -742,6 +809,45 @@ export class MeetingsGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   // ─── Private helpers ──────────────────────────────────────────────────────
+
+  /**
+   * Guards the new multi-task / per-task-eval shapes so a malformed payload
+   * never lands in Redis. Legacy single-task and author-keyed eval payloads
+   * remain accepted until the matching frontend groups ship.
+   */
+  private validateLiveVotePayload(
+    phase: MeetingPhase,
+    payload: Record<string, unknown>,
+  ): string | null {
+    if (phase === MeetingPhase.TASK_PLANNING && Array.isArray(payload.tasks)) {
+      for (const item of payload.tasks) {
+        if (!item || typeof item !== 'object') {
+          return 'Each task must be an object';
+        }
+        const key = (item as { taskKey?: unknown }).taskKey;
+        if (typeof key !== 'string' || key.trim().length === 0) {
+          return 'Each task requires a taskKey';
+        }
+      }
+    }
+
+    if (phase === MeetingPhase.TASK_EVALUATION && Array.isArray(payload.evaluations)) {
+      for (const item of payload.evaluations) {
+        if (!item || typeof item !== 'object') {
+          return 'Each evaluation must be an object';
+        }
+        const evalItem = item as { taskId?: unknown; taskAuthorId?: unknown };
+        const hasTaskId = typeof evalItem.taskId === 'string' && evalItem.taskId.length > 0;
+        const hasAuthor =
+          typeof evalItem.taskAuthorId === 'string' && evalItem.taskAuthorId.length > 0;
+        if (!hasTaskId && !hasAuthor) {
+          return 'Each evaluation requires a taskId or taskAuthorId';
+        }
+      }
+    }
+
+    return null;
+  }
 
   private requireAuth(client: AuthenticatedSocket): string {
     if (!client.userId) {

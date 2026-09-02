@@ -60,6 +60,9 @@ export class TaskResponseDto {
   @ApiProperty({ example: false })
   isCompleted: boolean;
 
+  @ApiProperty({ example: 'a3f1c2e0-4b9d-4c11-8e2a-1b0d9f7a6c55', required: false })
+  taskKey?: string;
+
   @ApiProperty({ example: '2026-01-19T10:00:00.000Z' })
   createdAt: Date;
 

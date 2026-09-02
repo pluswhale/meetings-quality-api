@@ -87,7 +87,8 @@ The central entity. Tracks the lifecycle of a meeting session and stores all pha
 | `upcomingDate` | DateTime | Yes | Scheduled start date/time |
 | `emotionalEvaluations` | Object[ ] | Auto | Submissions from Phase 1 |
 | `understandingContributions` | Object[ ] | Auto | Submissions from Phase 2 |
-| `taskEvaluations` | Object[ ] | Auto | Submissions from Phase 3 |
+| `taskEvaluations` | Object[ ] | Auto | Submissions from the task-evaluation phase |
+| `conclusions` | Text | No | Meeting-level «Выводы встречи», written by the creator |
 | `createdAt` | DateTime | Auto | Record creation timestamp |
 | `updatedAt` | DateTime | Auto | Last modification timestamp |
 
@@ -111,15 +112,16 @@ The central entity. Tracks the lifecycle of a meeting session and stores all pha
 
 ### 3.3 Task
 
-The single source of truth for all task planning data. A Task is created when a participant submits their task plan during the Task Planning phase. Each participant can have at most **one Task per Meeting**.
+The single source of truth for all task planning data. A Task is created when a participant submits their task plan during the Task Planning phase. A participant may author **several tasks per meeting**, each identified by a client-minted `taskKey` that exists before the document is flushed to MongoDB. Historical tasks without a `taskKey` are matched by `_id`.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `_id` | ID | Auto | Unique identifier |
 | `meetingId` | → Meeting | Yes | The meeting this task belongs to |
 | `authorId` | → User | Yes | The participant who owns this task |
+| `taskKey` | Text | No | Client-minted identity used before flush; unique with author + meeting |
 | `description` | Text | Yes | What the participant plans to do |
-| `commonQuestion` | Text | Yes | How the participant understands the meeting's central question |
+| `commonQuestion` | Text | Yes | Copy of the meeting's «Выводы встречи» at flush time (kept required for historical readers) |
 | `deadline` | DateTime | Yes | When this task must be completed by |
 | `estimateHours` | Number | Yes | Estimated hours to complete (default: 0) |
 | `contributionImportance` | Number (0–100) | Yes | How important the participant rates their own contribution |
@@ -192,7 +194,8 @@ Captured during **Phase 3**. Participants rate the importance of each other's ta
 
 | Field | Type | Range | Description |
 |---|---|---|---|
-| `taskAuthorId` | → User | — | Whose task is being evaluated |
+| `taskAuthorId` | → User | — | Optional. Whose task is being evaluated (historical entries) |
+| `taskId` | → Task | — | The specific task being scored (preferred for new evaluations) |
 | `importanceScore` | Number | 0–100 | How important the evaluator considers that task |
 
 ---
@@ -224,12 +227,12 @@ Captured during **Phase 3**. Participants rate the importance of each other's ta
 ┌──────────────────────────────────────────────────────────────────────┐
 │                              TASK                                     │
 │  _id · description · commonQuestion · deadline · estimateHours       │
-│  contributionImportance · approved · isCompleted                     │
+│  contributionImportance · approved · isCompleted · taskKey           │
 │  meetingId → MEETING                                                 │
 │  authorId  → USER                                                    │
 └──────────────────────────────────────────────────────────────────────┘
 
-Unique constraint: one Task per (meetingId + authorId) pair
+Unique constraint: one Task per (meetingId + authorId + taskKey) when taskKey is present
 ```
 
 **Relationship summary:**
@@ -240,7 +243,7 @@ Unique constraint: one Task per (meetingId + authorId) pair
 | User → Meeting (as participant) | Many : Many | Users can participate in multiple meetings |
 | Meeting → Task | 1 : Many | Each meeting can have many tasks |
 | User → Task (as author) | 1 : Many | One user can have tasks across multiple meetings |
-| Task (per meeting, per user) | Unique | Max 1 task per participant per meeting |
+| Task (per meeting, per user, per taskKey) | Unique | Several tasks per participant per meeting; historical tasks without taskKey are unmatched by that index |
 
 ---
 
@@ -492,19 +495,21 @@ The platform uses **Socket.IO** for real-time presence and event broadcasting. A
 | `room:leave` | `{ meetingId }` | Leave the meeting room; marks user as inactive |
 | `user:update_live_vote` | `{ meetingId, phase, payload }` | Persist the current phase answers |
 | `admin:advance_phase` | `{ meetingId, toPhase }` | Creator moves the meeting to another phase |
-| `admin:approve_task` | `{ meetingId, taskId, approved }` | Creator approves / unapproves a task |
+| `admin:approve_task` | `{ meetingId, taskId, approved, authorUserId? }` | Creator approves / unapproves a task (`taskId` is the live `taskKey` during planning) |
+| `admin:update_conclusions` | `{ meetingId, conclusions }` | Creator writes «Выводы встречи»; rejected for non-creators |
 | `admin:finish_meeting` | `{ meetingId }` | Creator finishes the meeting |
 
 ### 8.2 Server → Client Events
 
 | Event | Triggered by | Description |
 |---|---|---|
-| `room:state_sync` | `room:join` | Full current state, sent to the joining client only. Used for recovery after missed events |
-| `room:phase_changed` | Creator advances phase | New `phase` and the `previousPhase` |
+| `room:state_sync` | `room:join` | Full current state for **every phase entered so far** (`votesByPhase`), plus live-phase `votes` and `conclusions`. Used for recovery after missed events |
+| `room:phase_changed` | Creator advances phase | New `phase` and the `previousPhase`. Vote keys for the previous phase are **retained** in Redis |
 | `room:participants_updated` | Join, leave, or disconnect | Full updated list of connected participants |
 | `room:pending_voters_updated` | Vote update or disconnect | Who still has to answer in this phase |
 | `room:vote_updated` | Any participant updates their answers | The updated payload, broadcast to the room |
-| `room:task_approval_updated` | Creator approves / unapproves | Approval state for a task |
+| `room:task_approval_updated` | Creator approves / unapproves | Approval state for a specific task (`taskId` + `authorUserId`) |
+| `room:conclusions_updated` | Creator edits conclusions | Latest «Выводы встречи» text |
 | `meetingUpdated` | Submission or reschedule | Change signal with a `type` (e.g. `meeting_rescheduled`) |
 
 > These are the names the gateway actually emits. Earlier revisions of this
@@ -514,6 +519,11 @@ The platform uses **Socket.IO** for real-time presence and event broadcasting. A
 Clients must not assume they receive every event: a client that was
 disconnected or suspended recovers by re-sending `room:join` and using the
 `room:state_sync` reply as the authoritative state.
+
+Live answers for every phase stay in Redis for the meeting's lifetime
+(`mq:meeting:{id}:phase:{phase}:vote:{userId}`). Flushing a phase to MongoDB is
+idempotent and does **not** delete those keys. TTL on the meeting's keys is
+refreshed when the creator advances a phase.
 
 ### 8.3 Presence Tracking
 

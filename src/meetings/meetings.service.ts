@@ -67,6 +67,7 @@ interface TaskLeanDoc {
   contributionImportance: number;
   isCompleted: boolean;
   createdAt: Date;
+  taskKey?: string;
 }
 
 /**
@@ -654,7 +655,7 @@ export class MeetingsService {
     const tasks = await this.taskModel
       .find({ meetingId: new Types.ObjectId(id) })
       .select(
-        '_id authorId description commonQuestion estimateHours approved deadline contributionImportance isCompleted createdAt',
+        '_id authorId description commonQuestion estimateHours approved deadline contributionImportance isCompleted createdAt taskKey',
       )
       .lean<TaskLeanDoc[]>()
       .exec();
@@ -742,11 +743,9 @@ export class MeetingsService {
   }
 
   /**
-   * Maps lean Task documents to a record keyed by authorId.
-   *
-   * Participant display names are resolved from the pre-built Map rather than
-   * re-querying the database, keeping the entire operation O(n) — no nested
-   * find() calls.
+   * Maps lean Task documents to a record keyed by taskId so every task a
+   * participant authored is returned (authorId as the key would keep only the
+   * last write).
    */
   private mapTaskSubmissions(
     tasks: TaskLeanDoc[],
@@ -759,10 +758,12 @@ export class MeetingsService {
         fullName: null,
         email: null,
       };
+      const taskId = task._id.toString();
 
-      acc[authorId] = {
+      acc[taskId] = {
         participant,
-        taskId: task._id.toString(),
+        taskId,
+        ...(task.taskKey ? { taskKey: task.taskKey } : {}),
         submitted: true,
         submittedAt: task.createdAt,
         description: task.description,
@@ -793,7 +794,8 @@ export class MeetingsService {
         submitted: true,
         submittedAt: evaluation.submittedAt,
         evaluations: evaluation.evaluations.map((e) => ({
-          taskAuthor: resolveCompactRef(e.taskAuthorId),
+          ...(e.taskAuthorId ? { taskAuthor: resolveCompactRef(e.taskAuthorId) } : {}),
+          ...(e.taskId ? { taskId: resolveId(e.taskId) } : {}),
           importanceScore: e.importanceScore,
         })),
       };
@@ -970,23 +972,30 @@ export class MeetingsService {
       .populate('authorId', 'fullName email')
       .exec();
 
-    // Aggregate importance scores per author in one pass: O(evaluators × evaluations_per_evaluator).
-    const scoresByAuthor = meeting.taskEvaluations.reduce<Map<string, number[]>>(
-      (map, evaluation) => {
-        for (const e of evaluation.evaluations) {
-          const authorId = resolveId(e.taskAuthorId);
-          const existing = map.get(authorId) ?? [];
+    // Aggregate per task when taskId is present; fall back to author for
+    // historical evaluations that only carry taskAuthorId.
+    const scoresByTaskId = new Map<string, number[]>();
+    const scoresByAuthor = new Map<string, number[]>();
+    for (const evaluation of meeting.taskEvaluations) {
+      for (const e of evaluation.evaluations) {
+        if (e.taskId) {
+          const taskId = resolveId(e.taskId);
+          const existing = scoresByTaskId.get(taskId) ?? [];
           existing.push(e.importanceScore);
-          map.set(authorId, existing);
+          scoresByTaskId.set(taskId, existing);
+        } else if (e.taskAuthorId) {
+          const authorId = resolveId(e.taskAuthorId);
+          const existing = scoresByAuthor.get(authorId) ?? [];
+          existing.push(e.importanceScore);
+          scoresByAuthor.set(authorId, existing);
         }
-        return map;
-      },
-      new Map(),
-    );
+      }
+    }
 
     const taskAnalytics = tasks.map((task) => {
       const authorId = resolveId(task.authorId as unknown as PopulatedUser | Types.ObjectId);
-      const scores = scoresByAuthor.get(authorId) ?? [];
+      const taskId = task._id.toString();
+      const scores = scoresByTaskId.get(taskId) ?? scoresByAuthor.get(authorId) ?? [];
       const avg = scores.length > 0 ? scores.reduce((s, n) => s + n, 0) / scores.length : 0;
       const min = scores.length > 0 ? Math.min(...scores) : 0;
       const max = scores.length > 0 ? Math.max(...scores) : 0;
@@ -999,6 +1008,7 @@ export class MeetingsService {
       }
 
       return {
+        taskId,
         taskAuthor: resolveUserRef(task.authorId as unknown as PopulatedUser | Types.ObjectId),
         description: task.description,
         commonQuestion: task.commonQuestion,
@@ -1032,9 +1042,14 @@ export class MeetingsService {
     const meeting = await this.findOneInternal(id);
     this.assertCreator(meeting, userId);
 
-    // Fetch tasks once and index by authorId for O(1) per-participant lookups.
     const tasks = await this.taskModel.find({ meetingId: new Types.ObjectId(id) }).exec();
-    const taskByAuthorId = new Map(tasks.map((t) => [t.authorId.toString(), t]));
+    const tasksByAuthorId = new Map<string, typeof tasks>();
+    for (const t of tasks) {
+      const authorId = t.authorId.toString();
+      const list = tasksByAuthorId.get(authorId) ?? [];
+      list.push(t);
+      tasksByAuthorId.set(authorId, list);
+    }
 
     const participants = meeting.participantIds as unknown as Array<PopulatedUser | Types.ObjectId>;
 
@@ -1086,40 +1101,50 @@ export class MeetingsService {
           })),
       );
 
-      // O(1) task lookup via pre-built Map — no nested find() inside the loop.
-      const task = taskByAuthorId.get(participantId);
-      const taskInfo = task
-        ? {
-            description: task.description,
-            commonQuestion: task.commonQuestion,
-            deadline: task.deadline,
-            contributionImportance: task.contributionImportance,
-            estimateHours: task.estimateHours,
-            approved: task.approved,
-            isCompleted: task.isCompleted,
-            submittedAt: task.createdAt,
-          }
-        : null;
+      const authorTasks = tasksByAuthorId.get(participantId) ?? [];
+      const authorTaskIds = new Set(authorTasks.map((t) => t._id.toString()));
+      const toTaskInfo = (task: (typeof authorTasks)[number]) => ({
+        taskId: task._id.toString(),
+        ...(task.taskKey ? { taskKey: task.taskKey } : {}),
+        description: task.description,
+        commonQuestion: task.commonQuestion,
+        deadline: task.deadline,
+        contributionImportance: task.contributionImportance,
+        estimateHours: task.estimateHours,
+        approved: task.approved,
+        isCompleted: task.isCompleted,
+        submittedAt: task.createdAt,
+      });
+      const tasksCreated = authorTasks.map(toTaskInfo);
+      // Keep taskCreated for older clients: first task, or null when none.
+      const taskInfo = tasksCreated[0] ?? null;
 
       const taskEvaluationsGiven = meeting.taskEvaluations
         .filter((e) => resolveId(e.participantId) === participantId)
         .flatMap((e) =>
           e.evaluations.map((ev) => ({
-            taskAuthor: resolveCompactRef(ev.taskAuthorId),
+            ...(ev.taskAuthorId ? { taskAuthor: resolveCompactRef(ev.taskAuthorId) } : {}),
+            ...(ev.taskId ? { taskId: resolveId(ev.taskId) } : {}),
             importanceScore: ev.importanceScore,
           })),
         );
 
-      const taskEvaluationsReceived = task
-        ? meeting.taskEvaluations.flatMap((e) =>
-            e.evaluations
-              .filter((ev) => resolveId(ev.taskAuthorId) === participantId)
-              .map((ev) => ({
-                fromParticipant: resolveCompactRef(e.participantId),
-                importanceScore: ev.importanceScore,
-              })),
-          )
-        : [];
+      const taskEvaluationsReceived =
+        authorTasks.length > 0
+          ? meeting.taskEvaluations.flatMap((e) =>
+              e.evaluations
+                .filter((ev) =>
+                  ev.taskId
+                    ? authorTaskIds.has(resolveId(ev.taskId))
+                    : resolveId(ev.taskAuthorId) === participantId,
+                )
+                .map((ev) => ({
+                  fromParticipant: resolveCompactRef(e.participantId),
+                  ...(ev.taskId ? { taskId: resolveId(ev.taskId) } : {}),
+                  importanceScore: ev.importanceScore,
+                })),
+            )
+          : [];
 
       return {
         participant: participantInfo,
@@ -1133,6 +1158,7 @@ export class MeetingsService {
         },
         taskPlanning: {
           taskCreated: taskInfo,
+          tasksCreated,
           evaluationsGiven: taskEvaluationsGiven,
           evaluationsReceived: taskEvaluationsReceived,
         },
@@ -1238,6 +1264,7 @@ export class MeetingsService {
       currentPhase: meeting.currentPhase,
       status: meeting.status,
       upcomingDate: meeting.upcomingDate,
+      conclusions: meeting.conclusions ?? '',
       emotionalEvaluations: meeting.emotionalEvaluations.map((e) => ({
         participant: resolveUserRef(e.participantId),
         evaluations: e.evaluations.map((ev) => ({
@@ -1259,7 +1286,8 @@ export class MeetingsService {
       taskEvaluations: meeting.taskEvaluations.map((e) => ({
         participant: resolveUserRef(e.participantId),
         evaluations: e.evaluations.map((ev) => ({
-          taskAuthorId: resolveId(ev.taskAuthorId),
+          ...(ev.taskAuthorId ? { taskAuthorId: resolveId(ev.taskAuthorId) } : {}),
+          ...(ev.taskId ? { taskId: resolveId(ev.taskId) } : {}),
           importanceScore: ev.importanceScore,
         })),
         submittedAt: e.submittedAt,

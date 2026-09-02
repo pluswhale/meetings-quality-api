@@ -28,6 +28,15 @@ export class Task {
   @Prop({ type: Types.ObjectId, ref: 'Meeting', required: true })
   meetingId: Types.ObjectId;
 
+  /**
+   * Client-minted identity for a task that exists before the document is
+   * flushed to Mongo. Unique together with author + meeting so one participant
+   * can hold several tasks without them overwriting each other. Historical
+   * tasks have no taskKey and are matched by `_id` instead.
+   */
+  @Prop({ required: false, index: true })
+  taskKey?: string;
+
   @Prop({ required: true })
   deadline: Date;
 
@@ -62,4 +71,11 @@ export class Task {
 
 export const TaskSchema = SchemaFactory.createForClass(Task)
   .index({ projectId: 1, authorId: 1 })
-  .index({ projectId: 1, meetingId: 1 });
+  .index({ projectId: 1, meetingId: 1 })
+  .index(
+    { authorId: 1, meetingId: 1, taskKey: 1 },
+    {
+      unique: true,
+      partialFilterExpression: { taskKey: { $exists: true, $type: 'string' } },
+    },
+  );

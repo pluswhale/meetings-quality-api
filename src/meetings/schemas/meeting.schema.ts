@@ -107,8 +107,11 @@ export const TaskPlanningSchema = SchemaFactory.createForClass(TaskPlanning);
 // Phase 5: Task Evaluation - Individual task importance evaluation
 @Schema({ _id: false })
 export class TaskImportanceEvaluation {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
-  taskAuthorId: Types.ObjectId;
+  @Prop({ type: Types.ObjectId, ref: 'User', required: false })
+  taskAuthorId?: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'Task', required: false })
+  taskId?: Types.ObjectId;
 
   @Prop({ required: true, min: 0, max: 100 })
   importanceScore: number;
@@ -206,6 +209,13 @@ export class Meeting {
     default: Date.now,
   })
   upcomingDate: Date;
+
+  /**
+   * «Выводы встречи» — a single meeting-level summary written by the creator
+   * during task planning. Copied onto each flushed Task as `commonQuestion`.
+   */
+  @Prop({ required: false, default: '' })
+  conclusions: string;
 
   @Prop({ type: [EmotionalEvaluationSchema], default: [] })
   emotionalEvaluations: EmotionalEvaluation[];

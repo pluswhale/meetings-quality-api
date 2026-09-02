@@ -27,16 +27,26 @@ interface UnderstandingVote {
   contributions: ContributionItem[];
 }
 
-interface TaskPlanningVote {
-  taskDescription: string;
-  commonQuestion: string;
+interface TaskPlanningItem {
+  taskKey: string;
+  description: string;
   deadline: string;
-  expectedContributionPercentage: number;
   estimateHours: number;
+  expectedContributionPercentage?: number;
+}
+
+interface TaskPlanningVote {
+  tasks?: TaskPlanningItem[];
+  taskDescription?: string;
+  commonQuestion?: string;
+  deadline?: string;
+  expectedContributionPercentage?: number;
+  estimateHours?: number;
 }
 
 interface TaskEvalItem {
-  taskAuthorId: string;
+  taskAuthorId?: string;
+  taskId?: string;
   importanceScore: number;
 }
 
@@ -57,6 +67,8 @@ export class MeetingsFlushService {
   /**
    * Reads all finalised votes for `phase` from Redis and bulk-writes them
    * to MongoDB. Called by the gateway on every admin:advance_phase event.
+   * Votes stay in Redis after the flush so earlier phases remain reviewable;
+   * each flush is therefore idempotent (pull-then-push / upsert).
    * Returns the number of records flushed.
    */
   async flushPhaseToMongo(meetingId: string, phase: MeetingPhase): Promise<number> {
@@ -139,7 +151,6 @@ export class MeetingsFlushService {
       $push: { emotionalEvaluations: { $each: newEvals } },
     });
 
-    await this.redis.deleteVotesForPhase(meetingId, MeetingPhase.EMOTIONAL_EVALUATION);
     this.logger.log(`[Flush] Emotional: flushed ${newEvals.length} evaluations`);
     return newEvals.length;
   }
@@ -174,7 +185,6 @@ export class MeetingsFlushService {
       $push: { understandingContributions: { $each: newContribs } },
     });
 
-    await this.redis.deleteVotesForPhase(meetingId, MeetingPhase.UNDERSTANDING_CONTRIBUTION);
     this.logger.log(`[Flush] Understanding: flushed ${newContribs.length} submissions`);
     return newContribs.length;
   }
@@ -188,69 +198,114 @@ export class MeetingsFlushService {
     );
     if (votes.length === 0) return 0;
 
-    // Skip drafts with unfilled required fields — an incomplete task must
-    // never reach MongoDB (and must not fail the whole flush on validation).
-    const isComplete = ({ vote }: { vote: TaskPlanningVote }): boolean => {
-      const parsedDeadline = vote.deadline ? new Date(vote.deadline) : null;
+    const isItemComplete = (item: {
+      description?: string;
+      deadline?: string;
+      estimateHours?: number;
+    }): boolean => {
+      const parsedDeadline = item.deadline ? new Date(item.deadline) : null;
       return (
-        typeof vote.taskDescription === 'string' &&
-        vote.taskDescription.trim().length > 0 &&
-        typeof vote.commonQuestion === 'string' &&
-        vote.commonQuestion.trim().length > 0 &&
+        typeof item.description === 'string' &&
+        item.description.trim().length > 0 &&
         parsedDeadline !== null &&
         !isNaN(parsedDeadline.getTime()) &&
-        typeof vote.estimateHours === 'number' &&
-        vote.estimateHours > 0
+        typeof item.estimateHours === 'number' &&
+        item.estimateHours > 0
       );
     };
 
-    const completeVotes = votes.filter(isComplete);
-    const skipped = votes.length - completeVotes.length;
+    type FlatTask = {
+      userId: string;
+      taskKey?: string;
+      description: string;
+      deadline: string;
+      estimateHours: number;
+      expectedContributionPercentage?: number;
+    };
+
+    const flat: FlatTask[] = [];
+    for (const { userId, vote } of votes) {
+      if (Array.isArray(vote.tasks) && vote.tasks.length > 0) {
+        for (const t of vote.tasks) {
+          if (!isItemComplete(t)) continue;
+          flat.push({
+            userId,
+            taskKey: t.taskKey,
+            description: t.description,
+            deadline: t.deadline,
+            estimateHours: t.estimateHours,
+            expectedContributionPercentage: t.expectedContributionPercentage,
+          });
+        }
+      } else if (
+        isItemComplete({
+          description: vote.taskDescription,
+          deadline: vote.deadline,
+          estimateHours: vote.estimateHours,
+        })
+      ) {
+        flat.push({
+          userId,
+          description: vote.taskDescription as string,
+          deadline: vote.deadline as string,
+          estimateHours: vote.estimateHours as number,
+          expectedContributionPercentage: vote.expectedContributionPercentage,
+        });
+      }
+    }
+
+    const skipped = votes.length - new Set(flat.map((t) => t.userId)).size;
     if (skipped > 0) {
-      this.logger.warn(
-        `[Flush] TaskPlanning: skipped ${skipped} incomplete draft(s) for meeting ${meetingId}`,
-      );
+      this.logger.warn(`[Flush] TaskPlanning: some drafts incomplete for meeting ${meetingId}`);
     }
 
-    if (completeVotes.length === 0) {
-      await this.redis.deleteVotesForPhase(meetingId, MeetingPhase.TASK_PLANNING);
-      return 0;
-    }
+    if (flat.length === 0) return 0;
 
-    // Fetch shared data once — not inside the per-vote loop.
-    const [approvals, meetingDoc] = await Promise.all([
+    const [approvals, meetingDoc, liveConclusions] = await Promise.all([
       this.redis.getAllTaskApprovals(meetingId),
       this.meetingModel
         .findById(meetingId)
-        .select('projectId')
-        .lean<{ projectId: Types.ObjectId }>()
+        .select('projectId conclusions')
+        .lean<{ projectId: Types.ObjectId; conclusions?: string }>()
         .exec(),
+      this.redis.getConclusions(meetingId),
     ]);
 
     const projectId = meetingDoc?.projectId;
+    const conclusions =
+      liveConclusions || meetingDoc?.conclusions || votes[0]?.vote.commonQuestion || '—';
 
-    // approvals is keyed by userId because the creator panel calls
-    // emitApproveTask(userId, approved) — the gateway stores it under the
-    // submitter's userId, NOT a MongoDB task _id.
-    const ops = completeVotes.map(({ userId, vote }) => {
-      const parsedDeadline = vote.deadline ? new Date(vote.deadline) : null;
-      const deadlineIsValid = parsedDeadline !== null && !isNaN(parsedDeadline.getTime());
+    await this.meetingModel.findByIdAndUpdate(meetingId, {
+      $set: { conclusions },
+    });
+
+    const ops = flat.map((task) => {
+      const parsedDeadline = new Date(task.deadline);
+      const approvalKey = task.taskKey ? `${task.userId}:${task.taskKey}` : task.userId;
+      const approved = approvals[approvalKey] ?? approvals[task.userId] ?? false;
 
       return {
         updateOne: {
-          filter: {
-            authorId: new Types.ObjectId(userId),
-            meetingId: new Types.ObjectId(meetingId),
-          },
+          filter: task.taskKey
+            ? {
+                authorId: new Types.ObjectId(task.userId),
+                meetingId: new Types.ObjectId(meetingId),
+                taskKey: task.taskKey,
+              }
+            : {
+                authorId: new Types.ObjectId(task.userId),
+                meetingId: new Types.ObjectId(meetingId),
+              },
           update: {
             $set: {
-              description: vote.taskDescription,
-              commonQuestion: vote.commonQuestion,
-              ...(deadlineIsValid ? { deadline: parsedDeadline } : {}),
-              contributionImportance: vote.expectedContributionPercentage,
-              estimateHours: vote.estimateHours,
-              approved: approvals[userId] ?? false,
+              description: task.description,
+              commonQuestion: conclusions,
+              deadline: parsedDeadline,
+              contributionImportance: task.expectedContributionPercentage ?? 0,
+              estimateHours: task.estimateHours,
+              approved,
               isCompleted: false,
+              ...(task.taskKey ? { taskKey: task.taskKey } : {}),
             },
             $setOnInsert: {
               ...(projectId ? { projectId } : {}),
@@ -272,10 +327,9 @@ export class MeetingsFlushService {
         `[Flush] TaskPlanning bulkWrite failed for meeting ${meetingId}: ${(err as Error).message}`,
         (err as Error).stack,
       );
-      throw err; // Re-throw so the caller can surface the error and NOT advance the phase.
+      throw err;
     }
 
-    await this.redis.deleteVotesForPhase(meetingId, MeetingPhase.TASK_PLANNING);
     return ops.length;
   }
 
@@ -293,7 +347,12 @@ export class MeetingsFlushService {
     const newEvals = votes.map(({ userId, vote }) => ({
       participantId: new Types.ObjectId(userId),
       evaluations: vote.evaluations.map((e) => ({
-        taskAuthorId: new Types.ObjectId(e.taskAuthorId),
+        ...(e.taskAuthorId && Types.ObjectId.isValid(e.taskAuthorId)
+          ? { taskAuthorId: new Types.ObjectId(e.taskAuthorId) }
+          : {}),
+        ...(e.taskId && Types.ObjectId.isValid(e.taskId)
+          ? { taskId: new Types.ObjectId(e.taskId) }
+          : {}),
         importanceScore: e.importanceScore,
       })),
       submittedAt: now,
@@ -309,7 +368,6 @@ export class MeetingsFlushService {
       $push: { taskEvaluations: { $each: newEvals } },
     });
 
-    await this.redis.deleteVotesForPhase(meetingId, MeetingPhase.TASK_EVALUATION);
     this.logger.log(`[Flush] TaskEval: flushed ${newEvals.length} evaluations`);
     return newEvals.length;
   }

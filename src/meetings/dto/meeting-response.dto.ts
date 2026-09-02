@@ -75,8 +75,11 @@ class UnderstandingContributionDto {
 // ─── Task evaluations ──────────────────────────────────────────────────────────
 
 class TaskImportanceEvaluationItemDto {
-  @ApiProperty({ example: '507f1f77bcf86cd799439011' })
-  taskAuthorId: string;
+  @ApiProperty({ example: '507f1f77bcf86cd799439011', required: false })
+  taskAuthorId?: string;
+
+  @ApiProperty({ example: '507f1f77bcf86cd799439030', required: false })
+  taskId?: string;
 
   @ApiProperty({ example: 75, minimum: 0, maximum: 100 })
   importanceScore: number;
@@ -142,6 +145,12 @@ export class MeetingResponseDto {
 
   @ApiProperty({ example: '2026-02-11T09:00:00.000Z' })
   upcomingDate: Date;
+
+  @ApiProperty({
+    example: 'Договорились сосредоточиться на онбординге и закрыть долги по релизам.',
+    description: 'Выводы встречи — заполняет организатор на этапе планирования задач.',
+  })
+  conclusions: string;
 
   @ApiProperty({ type: [EmotionalEvaluationDto] })
   emotionalEvaluations: EmotionalEvaluationDto[];

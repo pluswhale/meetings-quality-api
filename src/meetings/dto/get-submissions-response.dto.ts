@@ -91,6 +91,9 @@ export class TaskSubmissionDto {
   @ApiProperty({ example: '507f1f77bcf86cd799439030' })
   taskId: string;
 
+  @ApiProperty({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', required: false })
+  taskKey?: string;
+
   @ApiProperty({ example: true })
   submitted: boolean;
 
@@ -125,8 +128,11 @@ export class TaskSubmissionDto {
 // ─── Task Evaluation submission ────────────────────────────────────────────────
 
 class TaskEvaluationEntryDto {
-  @ApiProperty({ type: CompactParticipantRefDto })
-  taskAuthor: CompactParticipantRefDto;
+  @ApiProperty({ type: CompactParticipantRefDto, required: false })
+  taskAuthor?: CompactParticipantRefDto;
+
+  @ApiProperty({ example: '507f1f77bcf86cd799439030', required: false })
+  taskId?: string;
 
   @ApiProperty({ example: 85, minimum: 0, maximum: 100 })
   importanceScore: number;
@@ -164,7 +170,7 @@ class SubmissionsDto {
   understanding_contribution: Record<string, UnderstandingSubmissionDto>;
 
   @ApiProperty({
-    description: 'Keyed by authorId string — sourced from Task collection',
+    description: 'Keyed by taskId string — sourced from Task collection (one entry per task)',
     type: 'object',
     additionalProperties: { $ref: '#/components/schemas/TaskSubmissionDto' },
   })
