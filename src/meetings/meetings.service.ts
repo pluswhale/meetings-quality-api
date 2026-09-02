@@ -105,7 +105,9 @@ function resolveId(field: Types.ObjectId | PopulatedUser | unknown): string {
  */
 function resolveUserRef(field: Types.ObjectId | PopulatedUser | unknown): ParticipantRefDto {
   if (isPopulatedUser(field)) {
-    return { _id: field._id.toString(), fullName: field.fullName, email: field.email };
+    const fullName = field.fullName?.trim() ? field.fullName : null;
+    const email = field.email?.trim() ? field.email : null;
+    return { _id: field._id.toString(), fullName, email };
   }
   return { _id: String(field), fullName: null, email: null };
 }
